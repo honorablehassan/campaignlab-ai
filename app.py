@@ -1,5 +1,6 @@
 import streamlit as st
-
+from openai import OpenAI
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 st.set_page_config(
     page_title="CampaignLab AI",
     page_icon="🧪",
@@ -34,3 +35,11 @@ budget = st.slider(
 
 if st.button("Generate Strategy"):
     st.success("CampaignLab is ready. AI strategy generation is coming next.")
+
+if st.button("Test AI Connection"):
+    response = client.responses.create(
+        model="gpt-5.6-luna",
+        input="Say: CampaignLab AI is connected!"
+    )
+
+    st.write(response.output_text)
