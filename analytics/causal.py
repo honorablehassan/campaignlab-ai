@@ -39,32 +39,37 @@ def run_event_study(df: pd.DataFrame, outcome: str, treatment_col: str, relative
     if len(vals)!=2: raise ValueError("Treatment column must have two levels.")
     d["__treated"]=(d[treatment_col]==vals[-1]).astype(int)
     if reference_period not in set(d[relative_time_col].astype(int)): raise ValueError("Reference relative period is absent from data.")
-    # statsmodels treatment coding with explicit reference; unit and calendar fixed effects.
-    rel=f'C(Q("{relative_time_col}"), Treatment(reference={reference_period}))'
-    rhs=f'__treated * {rel} + C(Q("{unit_col}")) + C(Q("{calendar_time_col}"))'
+    # Build only treated-by-event-time indicators. Including treated and relative-time
+    # main effects here would duplicate the unit and calendar fixed effects, creating
+    # a rank-deficient design whose clustered covariance can vary across platforms.
+    event_times=sorted(float(v) for v in d[relative_time_col].unique() if float(v)!=float(reference_period))
+    event_terms=[]
+    for i,event_time in enumerate(event_times):
+        term=f"__event_{i}"
+        d[term]=((d["__treated"]==1) & np.isclose(d[relative_time_col].astype(float),event_time)).astype(int)
+        event_terms.append((term,event_time))
+    if not event_terms: raise ValueError("Event study needs at least one non-reference relative period.")
+    rhs=" + ".join(term for term,_ in event_terms)
+    rhs += f' + C(Q("{unit_col}")) + C(Q("{calendar_time_col}"))'
     if covariates: rhs += " + " + " + ".join([f'Q("{c}")' for c in covariates])
     fit=smf.ols(f'Q("{outcome}") ~ {rhs}',data=d).fit(cov_type="cluster",cov_kwds={"groups":d[unit_col]})
     effects=[]
     cov=fit.cov_params()
     critical=float(stats.norm.ppf(.975))
-    for name,val in fit.params.items():
-        if "__treated:" in name and relative_time_col in name:
-            import re
-            m=re.search(r"\[T\.(-?\d+(?:\.\d+)?)\]",name)
-            if not m: continue
-            rel_time=float(m.group(1))
-            variance=float(cov.loc[name,name])
-            if not np.isfinite(variance) or variance < -1e-12:
-                raise ValueError("Event-study clustered uncertainty is numerically unstable for a treatment-time effect. Increase independent units/clusters or simplify the specification before interpreting it.")
-            se=float(np.sqrt(max(variance,0.0)))
-            if se>0:
-                z=float(val)/se
-                p_value=float(2*stats.norm.sf(abs(z)))
-                ci_low=float(val-critical*se); ci_high=float(val+critical*se)
-            else:
-                p_value=1.0 if abs(float(val))<1e-12 else 0.0
-                ci_low=ci_high=float(val)
-            effects.append({"relative_time":rel_time,"effect":float(val),"std_error":se,"p_value":p_value,"ci_low":ci_low,"ci_high":ci_high})
+    for name,rel_time in event_terms:
+        val=float(fit.params[name])
+        variance=float(cov.loc[name,name])
+        if not np.isfinite(variance) or variance < -1e-12:
+            raise ValueError("Event-study clustered uncertainty is numerically unstable for a treatment-time effect. Increase independent units/clusters or simplify the specification before interpreting it.")
+        se=float(np.sqrt(max(variance,0.0)))
+        if se>0:
+            z=val/se
+            p_value=float(2*stats.norm.sf(abs(z)))
+            ci_low=float(val-critical*se); ci_high=float(val+critical*se)
+        else:
+            p_value=1.0 if abs(val)<1e-12 else 0.0
+            ci_low=ci_high=val
+        effects.append({"relative_time":rel_time,"effect":val,"std_error":se,"p_value":p_value,"ci_low":ci_low,"ci_high":ci_high})
     effects.sort(key=lambda x:x["relative_time"])
     pre=[e for e in effects if e["relative_time"]<reference_period]
     return {"method":"event_study","n":int(len(d)),"units":int(d[unit_col].nunique()),"reference_period":reference_period,"effects":effects,"pre_period_effects":pre,"assumption_warning":"Event-study coefficients are causal only under credible identification assumptions. Pre-period estimates are a diagnostic, not proof of parallel trends."}
