@@ -1,0 +1,15 @@
+Apply on top of CampaignLab FINAL Horsepower V2 only.
+
+Copy these files into your existing campaignlab-ai folder and choose Replace when prompted.
+No analytics engines, tests, secrets, or example datasets are replaced.
+
+Changes:
+- real query-param navigation + clickable Home cards
+- Evidence design flow no longer assumes binary A/B
+- demo datasets exposed in Analyze Data
+- dark-safe matplotlib chart typography
+- stronger Home/navigation visual hierarchy
+
+Then run:
+python -m unittest discover -s tests -v
+streamlit run app.py

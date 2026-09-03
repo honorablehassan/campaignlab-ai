@@ -1,0 +1,21 @@
+CAMPAIGNLAB — CUMULATIVE UI/UX PATCH
+
+This patch supersedes UI/UX QA Round 1 and Round 2.
+You do NOT need to apply those earlier UI patches first.
+
+Apply it to your CampaignLab Analytics Engine Final build:
+1. Stop Streamlit.
+2. Copy the contents of this ZIP into the project root.
+3. Allow Windows to merge folders and replace files.
+4. Do not delete or replace .streamlit/secrets.toml.
+5. Restart: streamlit run app.py
+
+Expected visible checks after restart:
+- Tagline: "where ideas face reality."
+- Home headline: "From messy questions to decisions you can defend."
+- Strategy input: "What are we making a decision about?"
+- Strategy choices include "Build a Strategy" and "Improve Performance".
+- Budget asks for a time period.
+
+This patch changes UI/copy/state/strategy reasoning plumbing only.
+It does not replace the deterministic analytics engine.

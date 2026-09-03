@@ -1,0 +1,21 @@
+CAMPAIGNLAB ANALYTICS ENGINE FINAL PATCH
+
+BASE REQUIRED
+- CampaignLab V2.6 MMM Flagship UI
+
+HOW TO APPLY
+1. Back up your current CampaignLab folder.
+2. Keep your existing .streamlit/secrets.toml safe.
+3. Extract the patch at the ROOT of your CampaignLab project and allow it to replace matching files.
+4. The patch contains no .streamlit/secrets.toml and does not need your API key.
+5. Activate your existing virtual environment and run:
+   streamlit run app.py
+
+WHAT TO CHECK FIRST
+- Evidence Lab > Analyze Data: upload a file and look for "CampaignLab found your evidence".
+- Marketing Mix Model > Multiple exports > "See CampaignLab build the dataset".
+- Marketing Mix Model > Run the built dataset through Readiness before modeling.
+
+VALIDATION
+- Final assembled source tree: 644 / 644 tests passed.
+- Patch was also dry-applied onto a clean V2.6 tree and re-tested before packaging.

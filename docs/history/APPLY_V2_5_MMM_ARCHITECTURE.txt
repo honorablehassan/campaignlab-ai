@@ -1,0 +1,21 @@
+CampaignLab V2.5 — Decision Architecture + MMM Lab Special
+
+BASE: CampaignLab V2.4 NAV/FORM build.
+
+WHAT THIS RELEASE DOES
+- Rebuilds Analytics Directory around business decision families instead of mixed statistical categories.
+- Moves z-tests, Welch t-tests, Fisher, ANOVA, confidence intervals, etc. underneath the workflows that actually use them.
+- Adds shared Data Gate readiness contracts for prediction and forecasting, and uses the same readiness philosophy in MMM.
+- Adds a dedicated Lab Special route/workspace for Marketing Mix & Budget Optimizer (Beta).
+- Adds deterministic MMM readiness, adstock, saturation, constrained model fitting, chronological holdout validation, contribution reporting and budget-scenario optimization.
+- Adds a reproducible 156-week MMM demo dataset.
+- Adds 3 MMM regression tests; total test suite is now 37 tests.
+
+IMPORTANT MMM GUARDRAIL
+The MMM Lab Special is Beta. Its output is observational/model-based contribution, not proof of causality. High-stakes allocation should be calibrated with experiments or credible quasi-experimental evidence when possible.
+
+RUN
+python -m unittest discover -s tests -v
+streamlit run app.py
+
+Preserve .streamlit/secrets.toml when replacing a full project folder.

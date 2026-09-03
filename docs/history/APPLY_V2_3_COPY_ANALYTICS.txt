@@ -1,0 +1,21 @@
+CampaignLab V2.3 — Copy + Analytics Directory pass
+Base: V2.2 Lab Identity
+
+REPLACE:
+- ui/brand.py
+- ui/home.py
+- ui/strategy_lab.py
+- ui/evidence_lab.py
+
+NEW:
+- analytics/directory_catalog.py
+
+What changed:
+- Removed redundant second brand promise under the CampaignLab tagline.
+- Rewrote homepage copy around the full Strategy/Evidence value proposition.
+- Reworked Strategy Lab hero and intake copy; reserved “CampaignLab's Call” for the output, not the intake CTA.
+- Added plain-English statistical building blocks to Analytics Directory: two-proportion z-test, Welch t-test, Fisher exact, chi-square, ANOVA, Mann–Whitney U, confidence intervals, power/MDE, multiple-comparison correction.
+- Added a clearly non-executable capability roadmap: Bayesian experimentation, sequential testing, MMM, propensity weighting, uplift, forecasting, survival analysis.
+- No deterministic analytics executors were changed.
+
+Validation: 34/34 existing tests pass.

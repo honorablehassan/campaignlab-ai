@@ -1,0 +1,11 @@
+CampaignLab V2.4 — Navigation + Form Polish
+
+- Strategy intake typography strengthened without changing layout.
+- Budget entry now shows thousands separators (25,000).
+- Evidence A/B count inputs now show thousands separators.
+- System-health integer metrics use thousands separators.
+- Analytics Directory is now navigable by decision question.
+- Experimentation & uplift is a first-class directory lens.
+- Clarifies average experiment lift vs heterogeneous uplift modeling.
+- Deterministic analytics executors unchanged.
+- 34/34 tests pass.

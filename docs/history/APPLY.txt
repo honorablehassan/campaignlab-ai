@@ -1,0 +1,8 @@
+CampaignLab V2 Visual Recovery patch
+Base: CampaignLab_PRODUCT_EXPERIENCE_V2_FULL
+REPLACE:
+- ui/brand.py
+- ui/theme.py
+- ui/strategy_lab.py
+
+Then run: streamlit run app.py

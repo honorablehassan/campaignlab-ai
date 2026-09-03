@@ -1,0 +1,23 @@
+CampaignLab Product Experience v1
+
+BASE EXPECTED:
+CampaignLab FINAL HORSEPOWER v2 + HORSEPOWER V2 UI POLISH PATCH.
+
+REPLACE / ADD:
+- app.py
+- config.py
+- requirements.txt
+- ui/brand.py (NEW)
+- ui/theme.py
+- ui/home.py
+- ui/evidence_lab.py
+- visualization/interactive_charts.py (NEW)
+
+Then run:
+  pip install -r requirements.txt
+  python -m unittest discover -s tests -v
+  streamlit run app.py
+
+Expected automated result in the build environment: 34 tests, OK.
+
+This pass intentionally does NOT rewrite the deterministic analytics engines.

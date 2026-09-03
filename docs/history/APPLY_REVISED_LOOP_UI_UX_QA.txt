@@ -1,0 +1,24 @@
+CAMPAIGNLAB — REVISED LOOP UI/UX QA + SCHEMA MAPPING CONTRACT
+
+Use this INSTEAD OF the earlier CampaignLab_LOOP_UI_UX_QA_PATCH.zip if you have not applied that patch yet.
+
+Baseline expected:
+- Evidence Lab workflow fix applied
+- Behind the Lab visual fix applied
+
+Apply:
+1. Stop Streamlit.
+2. Back up your current project folder.
+3. Copy the CONTENTS of this ZIP into the project root.
+4. Merge folders and replace files when Windows asks.
+5. Do not delete .streamlit/secrets.toml.
+6. Restart: streamlit run app.py
+
+This patch includes all prior Loop UI/UX QA changes PLUS the real consequential schema-mapping resolution contract.
+
+Important mapping behavior:
+- If CampaignLab finds multiple plausible consequential fields (for example gross_sales vs net_sales), it asks once.
+- The confirmed mapping flows into Dataset Intelligence, method ranking, visualization planning, and EvidenceToolRuntime.
+- If the user leaves the role unresolved, downstream eligibility does not quietly choose one.
+- Tool runtime rejects an attempted tool call that contradicts a confirmed consequential mapping.
+- Changing a mapping invalidates the previous orchestration result.

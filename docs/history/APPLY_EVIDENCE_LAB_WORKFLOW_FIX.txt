@@ -1,0 +1,18 @@
+CAMPAIGNLAB — EVIDENCE LAB WORKFLOW FIX
+
+Apply this patch on top of the current Monster UI/UX QA build.
+
+1. Stop Streamlit.
+2. Copy the contents of this ZIP into the CampaignLab project root.
+3. Allow Windows to merge folders and replace ui/evidence_lab.py.
+4. Do not delete any other project files.
+5. Restart with: streamlit run app.py
+
+Visible checks:
+- Design Evidence includes "Build My Evidence Plan".
+- "I'm not sure yet" still produces a useful plan rather than a dead end.
+- The old "Can you decide who gets each version?" question is gone.
+- The old "How many conditions do you want to compare?" prerequisite is gone.
+
+Only one product file changes: ui/evidence_lab.py
+The test file is included as a regression contract and does not affect runtime behavior.

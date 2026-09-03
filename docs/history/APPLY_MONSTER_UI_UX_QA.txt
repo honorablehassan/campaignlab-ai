@@ -1,0 +1,20 @@
+CampaignLab — Monster UI/UX QA Patch
+
+BASELINE REQUIRED:
+The current corrected cumulative UI/UX build (the build showing "where ideas face reality" and "What are we making a decision about?").
+
+APPLY:
+Copy the contents of this ZIP into the CampaignLab project root and allow these files to replace the existing versions:
+- ui/evidence_lab.py
+- ui/about.py
+- ui/theme.py
+
+No analytics files are included.
+Do not delete the rest of the project.
+Do not replace .streamlit/secrets.toml.
+
+VALIDATED:
+644 / 644 tests passed
+Full Python compilation passed
+UI semantic contract checks passed
+Analytics immutability check passed

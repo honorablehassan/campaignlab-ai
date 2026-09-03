@@ -1,0 +1,29 @@
+CampaignLab UI/UX QA Round 2 — Forms + Coherence
+
+BASE REQUIRED:
+Your current build AFTER applying UI/UX QA Round 1.
+
+HOW TO APPLY:
+1. Close Streamlit.
+2. Back up your current project folder.
+3. Copy the CONTENTS of this patch folder into the ROOT of your CampaignLab project.
+4. Allow Windows to merge folders and replace files when prompted.
+5. Do not delete files that are not in this patch.
+6. Do not replace or expose .streamlit/secrets.toml.
+7. Start Streamlit again.
+
+WHAT CHANGED:
+- Strategy: budget period is explicit and carried into all strategy reasoning/follow-ups.
+- Strategy: business-model input now asks route-to-customer instead of mixing B2C/B2B with subscription.
+- Strategy: broader, more vivid examples.
+- Evidence Design: randomization and outcome-shape questions use human language.
+- Test sizing: business-first labels plus expandable statistical settings.
+- Results: traffic split and action threshold use plain-language questions.
+- MMM: media/control selectors ask business questions instead of column-language first.
+- Visual: one restrained form-section micro-label style; no redesign.
+
+VALIDATION:
+- Exact assembled build compiled successfully.
+- 644/644 analytics regression tests passed.
+- No analytics module was changed by this patch.
+- Strategy engine changes only carry the newly explicit budget period through existing prompts.
