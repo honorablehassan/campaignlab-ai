@@ -241,7 +241,7 @@ def _render_strategy_battle(client, strategy):
         "challengers. No fake numeric scoring."
     )
 
-    if st.button("⚔️ Run Strategy Battle", type="primary", use_container_width=True):
+    if st.button("⚔️ Run Strategy Battle", type="primary", width="stretch"):
         if battle_mode == "I have something in mind" and not user_challenger.strip():
             st.warning("Tell CampaignLab what strategy you want to challenge it with.")
         else:
@@ -299,7 +299,7 @@ def _render_strategy_battle(client, strategy):
             }
         )
 
-    st.dataframe(table_rows, use_container_width=True, hide_index=True)
+    st.dataframe(table_rows, width="stretch", hide_index=True)
 
     with st.expander("Why CampaignLab scored it this way"):
         for criterion in battle["criteria"]:
@@ -354,7 +354,7 @@ def _render_red_team(client, strategy):
     if st.button(
         "😈 Stress-Test Strategy",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     ):
         with st.spinner("CampaignLab is trying to break its own recommendation..."):
             st.session_state.red_team_result = generate_red_team(
@@ -457,7 +457,7 @@ def _render_scenario_lab(client, strategy):
     )
 
     if not st.session_state.scenario_setup_result:
-        if st.button("✨ Find pressure points", type="primary", use_container_width=True):
+        if st.button("✨ Find pressure points", type="primary", width="stretch"):
             with st.spinner("CampaignLab is finding the variables most capable of changing the call..."):
                 reset_scenario_state()
                 st.session_state.scenario_setup_result = generate_scenario_setup(
@@ -533,9 +533,9 @@ def _render_scenario_lab(client, strategy):
 
     run_col, reset_col = st.columns([3, 1])
     with run_col:
-        run_scenario = st.button("🔮 Run Scenario", type="primary", use_container_width=True)
+        run_scenario = st.button("🔮 Run Scenario", type="primary", width="stretch")
     with reset_col:
-        if st.button("Reset pressure points", use_container_width=True):
+        if st.button("Reset pressure points", width="stretch"):
             reset_scenario_state()
             st.rerun()
 
@@ -608,16 +608,16 @@ def _render_followups(client, strategy):
     follow1, follow2, follow3, follow4 = st.columns(4)
 
     with follow1:
-        if st.button("⚔️ Compare Strategies", use_container_width=True):
+        if st.button("⚔️ Compare Strategies", width="stretch"):
             st.session_state.strategy_followup = "compare"
     with follow2:
-        if st.button("👿 Devil's Advocate", use_container_width=True):
+        if st.button("👿 Devil's Advocate", width="stretch"):
             st.session_state.strategy_followup = "challenge"
     with follow3:
-        if st.button("🔬 Investigate with Evidence", use_container_width=True):
+        if st.button("🔬 Investigate with Evidence", width="stretch"):
             st.session_state.strategy_followup = "experiment"
     with follow4:
-        if st.button("🔮 Scenario Lab", use_container_width=True):
+        if st.button("🔮 Scenario Lab", width="stretch"):
             st.session_state.strategy_followup = "scenario"
 
     followup = st.session_state.strategy_followup
@@ -633,7 +633,7 @@ def _render_followups(client, strategy):
             "into Evidence Lab without starting over."
         )
         render_callout(strategy["suggested_experiment"], tone="success")
-        if st.button("🔬 Send to Evidence Lab", type="primary", use_container_width=True):
+        if st.button("🔬 Send to Evidence Lab", type="primary", width="stretch"):
             prepare_experiment_handoff(
                 strategy,
                 st.session_state.saved_strategy_inputs,
@@ -700,7 +700,7 @@ def render_strategy_lab(client):
         unsafe_allow_html=True,
     )
 
-    if st.button("✦ Build my strategy", type="primary", use_container_width=True):
+    if st.button("✦ Build my strategy", type="primary", width="stretch"):
         if not current_inputs["product"].strip():
             st.warning("Tell CampaignLab what we are making a decision about.")
         elif (

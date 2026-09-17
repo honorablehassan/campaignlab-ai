@@ -73,7 +73,10 @@ class InstrumentedOpenAI:
 
 
 def get_openai_client() -> InstrumentedOpenAI:
-    key = st.secrets.get("OPENAI_API_KEY")
+    try:
+        key = st.secrets.get("OPENAI_API_KEY")
+    except (FileNotFoundError, KeyError):
+        key = None
     if not key:
         raise CampaignLabAPIError("OPENAI_API_KEY is missing from .streamlit/secrets.toml.")
     raw = OpenAI(api_key=key, timeout=API_TIMEOUT_SECONDS, max_retries=API_MAX_RETRIES)

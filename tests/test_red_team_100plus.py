@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from analytics.dataset_intelligence import analyze_dataset_intelligence
-from analytics.mmm import mmm_readiness, fit_mmm, optimize_budget, geometric_adstock, saturation
+from analytics.mmm import mmm_readiness, fit_mmm, optimize_budget, geometric_adstock, hill_saturation, saturation
 from analytics.ab_binary import analyze_binary_ab, required_sample_size_per_group, wilson_interval
 from analytics.ab_continuous import analyze_continuous_ab
 from analytics.abn import analyze_abn
@@ -153,6 +153,9 @@ def test_mmm_fit_is_finite_and_bounded(seed):
     assert len(out["series"]) == len(df)
     assert set(out["channels"]) == {"a_spend","b_spend"}
     assert all(v["coefficient"] >= -1e-10 for v in out["channels"].values())
+    assert all(v["saturation_family"] in {"exponential","hill"} for v in out["channels"].values())
+    assert all(math.isfinite(v["total_ci_low"]) and math.isfinite(v["total_ci_high"]) and v["total_ci_low"] <= v["total_ci_high"] for v in out["channels"].values())
+    assert len(out["model"]["rolling_validation"]) == 5
 
 @pytest.mark.parametrize("budget_mult", [0.5,0.75,0.9,1.0,1.1,1.2,1.35,1.5])
 def test_mmm_optimizer_budget_conservation(budget_mult):

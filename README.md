@@ -1,101 +1,113 @@
-# CampaignLab AI
+# CampaignLab
 
 **Where marketing ideas face reality.**
 
-CampaignLab is an AI marketing decision system with two connected layers:
+CampaignLab is a portfolio-stage marketing decision system built by [Hassan Abrar](https://www.linkedin.com/in/hassanabrarsintown/). It combines deterministic Python analysis with bounded AI reasoning so marketers can move from a messy question or dataset to a decision they can inspect and defend.
 
-- **Strategy Lab** makes, compares, stress-tests, and scenario-tests a strategic call.
-- **Evidence Lab** inspects data, checks what the evidence can support, selects from registered analytical methods, executes deterministic Python tools, visualizes the decision, and lets the LLM explain the result without inventing statistics.
+> **Release status:** public portfolio pilot. The analytical workflows are tested; the bundled persistence layer is single-instance and is not represented as production multi-tenant SaaS.
 
-## Evidence Lab: live analytical horsepower
+## What it does
 
-CampaignLab's current Live deterministic executors include:
+| Workspace | The job | What comes back |
+|---|---|---|
+| **Strategy Lab** | Stress-test a marketing or product decision | The move, why it wins, assumptions, risks, counterargument and the evidence that would change it |
+| **Evidence Lab** | Understand a CSV/XLSX and run an eligible method | A decision brief, visual diagnostics, plain-language interpretation and optional statistical detail |
+| **Marketing Mix Model** | Examine channel contribution and budget alternatives | Readiness checks, model diagnostics, response curves, constrained scenarios and a guarded allocation verdict |
 
-- Binary A/B testing with Wilson/Newcombe intervals, Fisher cross-check, SRM and business-threshold decisions
-- Continuous A/B testing with Welch inference, effect size and Mann–Whitney robustness check
-- A/B/n multi-arm testing with omnibus tests and Holm multiple-comparison correction
-- Bootstrap mean/median group differences
-- Linear regression with HC3 robust SE, VIF, heteroskedasticity check and fit metrics
-- Logistic regression with odds ratios, convergence/separation safeguards, AUC and Brier score
-- Random Forest / Gradient Boosting predictive models with holdout evaluation and feature importance
-- Marketing efficiency: ROAS, CPA, CPC, CPM, CTR, CVR and spend share
-- Funnel analysis
-- Cohort / retention analysis
-- Difference-in-Differences with robust or unit-clustered SE
-- Panel event study with unit/time fixed effects and clustered SE
-- Interrupted time series with HAC standard errors
-- K-means segmentation with silhouette-based automatic k selection
-- Isolation Forest anomaly detection
+> **Python calculates. CampaignLab challenges the evidence. You get the decision.**
 
-The **Analytics Directory** is generated from the same capability registry used by Evidence Lab. A method is not labeled Live merely because the LLM knows what it is.
+## Try the product without private data
 
-Advanced methods such as synthetic control, DAG-guided adjustment, DML and causal forests are documented with Research status and are not falsely represented as executed.
+CampaignLab includes deterministic synthetic scenarios and a truth manifest documenting the signals used to generate them.
+
+1. Use **Strategy Lab** to challenge one live marketing decision.
+2. In **Evidence Lab**, load the campaign experiment or market-rollout demo.
+3. In **Marketing Mix Model**, load the known-answer weekly media demo or watch the Data Builder align separate exports.
+4. Inspect `examples/demo_truth_manifest.json` to compare the generated evidence with the known signal.
+
+## Why it is not a generic AI wrapper
+
+- Registered Python executors own statistical results.
+- The AI can invoke only whitelisted analytical tools; it cannot execute arbitrary Python or SQL.
+- Uploaded rows remain inside the running app process. The reasoning layer receives compact structured summaries.
+- A method is marked ready only when a deterministic executor exists.
+- Recommendations preserve uncertainty, assumptions, competing evidence, flip conditions and provenance.
+- Decision Memory can preserve the prediction and later compare it with the observed outcome.
+
+## Analytical coverage
+
+Evidence Lab covers binary, continuous and multi-arm experiments; CUPED; bootstrap inference; robust linear and logistic regression; predictive models; marketing-efficiency, funnel, cohort and retention analysis; Difference-in-Differences; panel event studies; interrupted time series; segmentation; and anomaly detection.
+
+The guarded MMM Beta adds carryover, diminishing returns, controls, regularization, chronological holdout validation, historical-window stability, leave-one-control-out sensitivity, optional experiment calibration, channel contribution, response curves and constrained budget scenarios. Observational attribution is never presented as automatically causal.
 
 ## Architecture
 
-`Python calculates. AI reasons and explains.`
+```mermaid
+flowchart TD
+    A[Question or dataset] --> B[Recognition and readiness]
+    B --> C[Registered Python method]
+    C --> D[Structured analytical result]
+    D --> E[Evidence-bounded reasoning]
+    E --> F[Decision brief and diagnostics]
+    F --> G[Decision memory and outcome check]
+```
 
-Raw uploaded DataFrames remain server-side. The Evidence Orchestrator can only invoke whitelisted deterministic tools. It cannot execute arbitrary Python or SQL. Dataset intelligence runs before LLM interpretation and compresses schema, data-quality findings, semantic roles, answerability and method eligibility into structured evidence.
+See [Architecture](docs/ARCHITECTURE.md) and [Security](SECURITY.md) for component and deployment boundaries.
 
-## Reliability and observability
+## Run locally
 
-- bounded OpenAI retries and timeout
-- safe UI error boundary and reference IDs
-- tool-level failure isolation
-- session telemetry for model/tool calls, latency, tokens and estimated cost
-- no raw uploaded rows written to telemetry
-- strict JSON schemas for Strategy outputs
-- source package excludes `.venv`, `.git`, caches and secrets
-- automated deterministic engine tests
+Python 3.11 or 3.12 is recommended.
 
-## Setup
-
-```bash
+```powershell
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
-pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-For development and test dependencies:
-
-```bash
-pip install -r requirements-dev.txt
-```
-
-Create `.streamlit/secrets.toml` locally:
+Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and insert a valid key for AI-assisted workflows:
 
 ```toml
 OPENAI_API_KEY = "your-key-here"
 ```
 
-Never commit this file.
+Never commit the real secrets file.
 
-Run tests:
+## Verify the build
 
-```bash
-python -m pytest -q
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m compileall -q .
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Run CampaignLab:
+## Deploy and present it
 
-```bash
-streamlit run app.py
+- [Deployment guide](docs/DEPLOYMENT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [90-second demo script](docs/DEMO_SCRIPT.md)
+- [LinkedIn launch draft](docs/LINKEDIN_LAUNCH.md)
+- [Release audit protocol](docs/RELEASE_AUDIT_PROTOCOL.md)
+
+## Repository map
+
+```text
+analytics/       deterministic analytical engines
+core/            orchestration, uploads, memory and safety boundaries
+engines/         structured reasoning and evidence arbitration
+schemas/         output contracts
+ui/              Streamlit product surfaces
+visualization/   interactive and export-ready views
+examples/        reproducible synthetic datasets and truth manifest
+tests/           unit, contract, integration and UI checks
+docs/            architecture, deployment and release documentation
 ```
 
-Two synthetic demo datasets are included in `examples/`.
+## Known limits
 
+- This is a public portfolio pilot, not a substitute for independent statistical, privacy or security review.
+- SQLite Decision Memory is suitable for local or single-instance use, not multi-tenant customer data.
+- MMM remains sensitive to history length, correlated channels, omitted demand drivers and data quality.
+- A statistically valid result can still be commercially irrelevant. Business thresholds and human judgment remain part of the decision.
+- Public demonstrations should use the bundled synthetic scenarios or non-sensitive data only.
 
-## Product Experience V2
-- Interactive Plotly Decision Chartbook (Matplotlib remains as deterministic fallback/export support)
-- Executive / Analyst view modes
-- Registry-grounded plain-English method explainers
-- PDF Decision Report export
-- Behind the Lab / Support CampaignLab coming-soon page
-- Plan vs Call terminology guardrail
-- Ask CampaignLab about the current result (on-demand, context-bounded follow-up)
-
-## V2.5 Lab Special: Marketing Mix & Budget Optimizer (Beta)
-Open **Lab Special: MMM** from CampaignLab navigation or the homepage feature card. Load `examples/demo_mmm_weekly.csv` to exercise the full deterministic workflow.
+Source: [github.com/honorablehassan/campaignlab-ai](https://github.com/honorablehassan/campaignlab-ai)

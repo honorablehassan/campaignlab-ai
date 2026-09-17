@@ -22,3 +22,7 @@ Thumbs.db
 *.log
 logs/
 .telemetry/
+.campaignlab/
+*.db
+*.db-shm
+*.db-wal

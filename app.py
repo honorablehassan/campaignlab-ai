@@ -11,6 +11,7 @@ from ui.about import render_about
 from ui.strategy_lab import render_strategy_lab
 from ui.theme import apply_campaignlab_theme, render_top_nav
 from ui.system_health import render_system_health
+from ui.account import render_account_control
 from utils.safe_ui import render_with_error_boundary
 
 st.set_page_config(page_title=PAGE_TITLE,page_icon=PAGE_ICON,layout="wide",initial_sidebar_state="collapsed")
@@ -18,7 +19,7 @@ initialize_state(); apply_campaignlab_theme()
 try: client=get_openai_client()
 except CampaignLabError as exc:
     client=None; st.error(str(exc))
-brand_header(); st.divider()
+brand_header(); render_account_control(); st.divider()
 page=st.query_params.get("page","home"); valid={"home","strategy","evidence","mmm","directory","about","health"}
 if page not in valid: page="home"
 render_top_nav(page); st.divider()

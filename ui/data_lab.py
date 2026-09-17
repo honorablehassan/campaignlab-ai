@@ -17,6 +17,6 @@ def render_data_lab():
 
     if uploaded_file:
         st.success(f"Loaded: {uploaded_file.name}")
-        st.button("📊 Run Data Health Check", type="primary", use_container_width=True)
+        st.button("📊 Run Data Health Check", type="primary", width="stretch")
     else:
         st.info("Upload CSV or Excel data to begin.")

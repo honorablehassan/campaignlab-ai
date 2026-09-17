@@ -54,6 +54,11 @@ Context assessment: {context_result["reason"]}
 YOUR TASK
 ==================================================
 Develop one strong strategic recommendation.
+First determine the user's actual decision stage from the confirmed context. Distinguish
+between exploring, building, validating, launching, growing, and scaling. Do not answer
+a later-stage distribution or monetization question when the user is still validating
+the product, and do not prematurely redefine the product merely to manufacture a narrow
+launch wedge.
 Use domain knowledge and strategic reasoning.
 Do not merely repeat the user's inputs.
 Look for non-obvious implications of the decision subject, people involved, objective,
@@ -82,6 +87,13 @@ DECISION QUALITY RULES
 - Avoid false precision.
 - Recommend an experiment when uncertainty matters.
 - Prefer a specific strategic choice over a giant tactic list.
+- Preserve the user's explicitly stated product thesis, brand ambition, and constraints
+  unless you clearly explain why the decision requires challenging one of them.
+- Separate the identity of the product from a temporary acquisition tactic or validation
+  experiment. A launch wedge is not automatically the whole product.
+- Make the output easy to scan: strategy_name at most 10 words; recommendation at most
+  140 words; why_it_wins at most 100 words; devils_advocate and suggested_experiment at
+  most 80 words each; assumptions and risks should each be one concise sentence.
 - Sound like CampaignLab, not a generic AI assistant.
 """
 

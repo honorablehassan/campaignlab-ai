@@ -6,11 +6,13 @@ import time
 import pandas as pd
 
 from analytics.ab_binary import analyze_binary_ab, required_sample_size_per_group
+from analytics.result_contract import analytical_result
 from analytics.ab_continuous import analyze_continuous_ab
 from analytics.abn import analyze_abn
 from analytics.bootstrap import bootstrap_group_difference
 from analytics.causal import run_difference_in_differences, run_event_study, run_interrupted_time_series
 from analytics.cohorts import analyze_cohort_retention
+from analytics.cuped import analyze_cuped
 from analytics.data_profile import profile_dataframe
 from analytics.dataset_intelligence import analyze_dataset_intelligence
 from analytics.marketing import analyze_marketing_efficiency, analyze_funnel
@@ -22,6 +24,16 @@ from analytics.unsupervised import segment_kmeans, detect_anomalies
 from visualization.decision_visualization import recommend_visualizations
 from core.observability import record_event
 from core.errors import CampaignLabToolError
+
+
+ANALYTICAL_TOOLS = {
+    "analyze_binary_ab", "analyze_continuous_ab_dataset", "analyze_cuped",
+    "analyze_abn_dataset", "bootstrap_group_difference", "fit_linear_regression",
+    "fit_logistic_regression", "fit_tree_model", "analyze_marketing_efficiency",
+    "analyze_funnel", "analyze_cohort_retention", "run_difference_in_differences",
+    "run_event_study", "segment_kmeans", "detect_anomalies",
+    "run_interrupted_time_series",
+}
 
 
 def _jsonable(value: Any) -> Any:
@@ -78,6 +90,7 @@ class EvidenceToolRuntime:
                 {"type":"function","name":"rank_candidate_methods","description":"Rank methods against the uploaded dataset and question, showing eligibility and execution status.","parameters":_obj({"question":{"type":"string"}},["question"]),"strict":True},
                 {"type":"function","name":"recommend_decision_visualizations","description":"Recommend the smallest useful chart set for this dataset/question.","parameters":_obj({"question":{"type":"string"}},["question"]),"strict":True},
                 {"type":"function","name":"analyze_continuous_ab_dataset","description":"Execute Welch continuous A/B analysis on two groups in the uploaded dataset.","parameters":_obj({"group_column":col,"outcome_column":col,"control_group":col,"treatment_group":col,"business_threshold":{"type":"number","minimum":0}},["group_column","outcome_column","control_group","treatment_group","business_threshold"]),"strict":True},
+                {"type":"function","name":"analyze_cuped","description":"Execute CUPED precision adjustment for a randomized two-arm experiment. The user must confirm the covariate is pre-treatment.","parameters":_obj({"group_column":col,"outcome_column":col,"pre_treatment_covariate":col,"control_group":col,"treatment_group":col},["group_column","outcome_column","pre_treatment_covariate","control_group","treatment_group"]),"strict":True},
                 {"type":"function","name":"analyze_abn_dataset","description":"Execute multi-arm A/B/n with omnibus test and Holm-adjusted comparisons vs control.","parameters":_obj({"group_column":col,"outcome_column":col,"outcome_type":{"type":"string","enum":["auto","binary","continuous"]},"control_group":col},["group_column","outcome_column","outcome_type","control_group"]),"strict":True},
                 {"type":"function","name":"bootstrap_group_difference","description":"Bootstrap a mean/median difference between two groups.","parameters":_obj({"group_column":col,"outcome_column":col,"control_group":col,"treatment_group":col,"statistic":{"type":"string","enum":["mean","median"]}},["group_column","outcome_column","control_group","treatment_group","statistic"]),"strict":True},
                 {"type":"function","name":"fit_linear_regression","description":"Fit deterministic OLS with HC3 robust SE and regression diagnostics for a continuous target.","parameters":_obj({"target":col,"predictors":cols},["target","predictors"]),"strict":True},
@@ -97,9 +110,15 @@ class EvidenceToolRuntime:
     def execute(self,name:str,args:dict):
         started=time.perf_counter()
         try:
-            out=self._execute(name,args)
+            out=_jsonable(self._execute(name,args))
+            if name in ANALYTICAL_TOOLS and isinstance(out, dict):
+                out["_analytical_result"] = analytical_result(
+                    name,
+                    out,
+                    question=str(args.get("question") or ""),
+                )
             record_event(kind="tool_call",feature=name,status="ok",duration_ms=(time.perf_counter()-started)*1000)
-            return _jsonable(out)
+            return out
         except Exception as exc:
             eid=record_event(kind="tool_call",feature=name,status="error",duration_ms=(time.perf_counter()-started)*1000,detail=f"{type(exc).__name__}: {exc}")
             raise CampaignLabToolError(f"{name} failed: {exc} [ref {eid}]") from exc
@@ -123,6 +142,7 @@ class EvidenceToolRuntime:
             c=pd.to_numeric(df.loc[df[g].astype(str)==args["control_group"],o],errors="coerce").dropna()
             t=pd.to_numeric(df.loc[df[g].astype(str)==args["treatment_group"],o],errors="coerce").dropna()
             return analyze_continuous_ab(c,t,business_threshold=args["business_threshold"])
+        if name=="analyze_cuped": return analyze_cuped(df,args["group_column"],args["outcome_column"],args["pre_treatment_covariate"],args["control_group"],args["treatment_group"])
         if name=="analyze_abn_dataset": return analyze_abn(df,args["group_column"],args["outcome_column"],args["outcome_type"],args["control_group"])
         if name=="bootstrap_group_difference": return bootstrap_group_difference(df,args["group_column"],args["outcome_column"],args["control_group"],args["treatment_group"],args["statistic"])
         if name=="fit_linear_regression": return fit_linear_regression(df,args["target"],args["predictors"])

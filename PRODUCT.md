@@ -30,5 +30,8 @@ No LLM-generated p-values, confidence intervals, sample sizes, model metrics or 
 ## Decision rule
 CampaignLab should make the strongest decision justified by the evidence, but must never manufacture a causal conclusion the data cannot support.
 
+## Canonical output rule
+Every completed workflow must converge through one Decision Object. Deterministic tools preserve their method-specific result and expose a common analytical envelope; the Decision Kernel turns that evidence into the call, confidence, counterweight, assumptions, flip conditions and next action. UI, exports and memory must not create competing conclusions.
+
 ### Lab Specials
 Lab Specials are heavier end-to-end analytical products that deserve dedicated workspaces rather than making Evidence Lab noisy. The first is Marketing Mix & Budget Optimizer (Beta). It follows the same product constitution: deterministic calculation, explicit readiness, uncertainty/trust guardrails, and no causal certainty beyond what the evidence supports.

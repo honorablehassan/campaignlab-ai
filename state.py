@@ -22,6 +22,9 @@ DEFAULT_STATE = {
     "experiment_known_input": "",
     "experiment_constraints_input": "",
     "directory_method_interest": None,
+    "decision_memory": [],
+    "decision_memory_owner": None,
+    "outcome_observations": [],
 }
 
 

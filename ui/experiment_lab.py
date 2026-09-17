@@ -42,7 +42,7 @@ def render_experiment_lab():
         key="experiment_constraints_input",
     )
 
-    if st.button("🧪 Design Experiment", type="primary", use_container_width=True):
+    if st.button("🧪 Design Experiment", type="primary", width="stretch"):
         st.info(
             "The Strategy Lab handoff is now wired. "
             "The statistical Experiment Engine is the next build."

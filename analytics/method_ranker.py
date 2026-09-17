@@ -26,6 +26,10 @@ def rank_methods(intel: DatasetIntelligence, question: str="") -> list[dict[str,
             ok=has("treatment") and (has("binary_outcome") or has("continuous_outcome") or has("revenue")); blockers += [] if ok else ["Needs 3+ treatment arms + outcome; arm count is verified at execution."]
         elif mid=="bootstrap_difference":
             ok=has("treatment") and numeric>=1; blockers += [] if ok else ["Needs a grouping/treatment field + numeric outcome."]
+        elif mid=="cuped":
+            ok=has("treatment") and numeric>=2
+            blockers += [] if ok else ["Needs randomized treatment, a continuous outcome, and a separate predictive pre-treatment covariate."]
+            if ok: reasons.append("Treatment plus enough numeric fields for an outcome and user-confirmed pre-treatment covariate were detected.")
         elif mid=="linear_regression":
             ok=rows>=50 and numeric>=2; blockers += [] if ok else ["Needs enough labeled history for a holdout, a numeric target, and predictor variation."]
             if ok: reasons.append("Dataset is large enough for a conservative predictive holdout; final readiness also depends on the chosen target and predictors.")
@@ -58,6 +62,7 @@ def rank_methods(intel: DatasetIntelligence, question: str="") -> list[dict[str,
         if any(w in q for w in ["roas","budget","cac","channel","cpa"]): score += 16 if mid=="marketing_efficiency" else 0
         if any(w in q for w in ["predict","propensity","forecast"]): score += 10 if mid in ("logistic_regression","linear_regression","tree_model") else 0
         if any(w in q for w in ["before","after","rollout","policy"]): score += 10 if mid in ("did","event_study","interrupted_time_series") else 0
+        if any(w in q for w in ["cuped","pre-period","pre period","variance reduction","precision"]): score += 18 if mid=="cuped" else 0
         eligible=evaluated and not blockers
         executable=eligible and m["status"]=="Live"
         score=max(0,min(100,round(score)))

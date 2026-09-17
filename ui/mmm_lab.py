@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-import io
 import hashlib
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from analytics.mmm import mmm_readiness, fit_mmm, optimize_budget
+from analytics.mmm import geometric_adstock, media_response, mmm_readiness, fit_mmm, optimize_budget
 from analytics.data_builder import understand_source, build_mmm_dataset
+from engines.decision_kernel import decision_from_mmm
 from ui.brand import brand_mark
+from ui.decision_record import render_decision_memory, render_decision_record
 from state import prepare_mmm_handoff
+from core.uploads import load_tabular_upload
 
 
 def _money(x, symbol=""): return f"{symbol}{x:,.0f}"
@@ -49,9 +51,7 @@ def _infer_period_name(df: pd.DataFrame, date_col: str, builder_report=None) -> 
     return "period"
 
 def _load(uploaded):
-    raw=uploaded.getvalue()
-    if len(raw)>50*1024*1024: raise ValueError("File is larger than the current 50 MB safety limit.")
-    return pd.read_csv(io.BytesIO(raw),low_memory=False) if uploaded.name.lower().endswith('.csv') else pd.read_excel(io.BytesIO(raw))
+    return load_tabular_upload(uploaded)
 
 
 def _render_source_understanding(df: pd.DataFrame, name: str):
@@ -135,13 +135,13 @@ def _readiness_card(readiness):
 def _response_curve(channel: str, info: dict, current: float, recommended: float, period_name: str = "period"):
     top=max(current,recommended,1.0)*1.8
     spend=np.linspace(0,top,80)
-    alpha=float(info['adstock_alpha']); scale=max(float(info['saturation_scale']),1e-9); beta=float(info['coefficient'])
+    alpha=float(info['adstock_alpha']); beta=float(info['coefficient'])
     steady=spend/max(1-alpha,1e-6)
-    response=beta*(1-np.exp(-steady/scale))
+    response=beta*media_response(steady,info)
     fig=go.Figure()
     fig.add_trace(go.Scatter(x=spend,y=response,name='Modeled response',mode='lines',hovertemplate='Spend: $%{x:,.0f}<br>Modeled response: %{y:,.1f}<extra></extra>'))
     for x,name in [(current,'Current'),(recommended,'Scenario')]:
-        y=beta*(1-np.exp(-(x/max(1-alpha,1e-6))/scale))
+        y=beta*float(media_response(np.asarray([x/max(1-alpha,1e-6)]),info)[0])
         fig.add_trace(go.Scatter(x=[x],y=[y],name=name,mode='markers',marker={'size':10},hovertemplate=f'{name}<br>Spend: $%{{x:,.0f}}<br>Modeled response: %{{y:,.1f}}<extra></extra>'))
     fig.update_layout(title=channel.replace('_',' ').title(),height=310,margin=dict(l=10,r=10,t=48,b=10),legend_title_text='',xaxis_title=f'Spend per {period_name}',yaxis_title='Modeled media response')
     return fig
@@ -168,10 +168,20 @@ def render_mmm_lab():
     if source_mode=="One analysis-ready table":
         c1,c2=st.columns(2)
         with c1:
-            if st.button("🧪 Explore with the MMM demo",use_container_width=True,key="load_mmm_demo"):
+            st.markdown('''<div class="cl-demo-card mmm">
+              <span>KNOWN-ANSWER MMM DEMO</span><h3>Where could the next dollar work harder?</h3>
+              <p>Three and a half years of weekly revenue, four media channels, promotions, holidays, pricing, carryover and diminishing returns.</p>
+              <small>Explore readiness, validation, contribution, response curves and a constrained allocation scenario.</small>
+            </div>''', unsafe_allow_html=True)
+            if st.button("🧪 Explore with the MMM demo",width="stretch",key="load_mmm_demo"):
                 st.session_state['mmm_demo']=True
                 st.session_state.pop('mmm_result',None)
         with c2:
+            st.markdown('''<div class="cl-demo-card upload">
+              <span>YOUR ANALYSIS-READY TABLE</span><h3>Bring the model-ready history you have.</h3>
+              <p>Upload a weekly or monthly table containing an outcome, media investment and the demand controls that matter.</p>
+              <small>CampaignLab inspects the structure before it allows the model to make an allocation claim.</small>
+            </div>''', unsafe_allow_html=True)
             uploaded=st.file_uploader("Upload CSV / Excel",type=['csv','xlsx'],key='mmm_upload',label_visibility='collapsed')
         if uploaded:
             st.session_state['mmm_demo']=False
@@ -185,10 +195,20 @@ def render_mmm_lab():
     else:
         d1,d2=st.columns(2)
         with d1:
-            if st.button("✦ See CampaignLab build the dataset",use_container_width=True,key="mmm_builder_demo"):
+            st.markdown('''<div class="cl-demo-card mmm">
+              <span>DATA BUILDER DEMO</span><h3>See separate exports become one model table.</h3>
+              <p>CampaignLab aligns synthetic platform and commerce files, preserves unknown periods and asks only when a mapping changes the answer.</p>
+              <small>Use this to inspect the ingestion workflow before bringing your own exports.</small>
+            </div>''', unsafe_allow_html=True)
+            if st.button("✦ See CampaignLab build the dataset",width="stretch",key="mmm_builder_demo"):
                 st.session_state['mmm_builder_demo_on']=True
                 st.session_state.pop('mmm_result',None)
         with d2:
+            st.markdown('''<div class="cl-demo-card upload">
+              <span>YOUR PLATFORM EXPORTS</span><h3>Bring the files you actually receive.</h3>
+              <p>Upload media-platform and sales files together. CampaignLab maps, aggregates and aligns them before modeling.</p>
+              <small>Raw platform exports remain a guarded workflow; review every material mapping.</small>
+            </div>''', unsafe_allow_html=True)
             uploads=st.file_uploader("Bring the exports you actually have",type=['csv','xlsx'],accept_multiple_files=True,key='mmm_multi_upload',label_visibility='collapsed',help="Examples: Meta Ads, Google Ads, YouTube, TV and a sales/commerce file. CampaignLab maps, aggregates and aligns them before MMM.")
         if uploads:
             st.session_state['mmm_builder_demo_on']=False
@@ -207,7 +227,7 @@ def render_mmm_lab():
     if df is None:
         demo_path=Path(__file__).resolve().parents[1]/'examples'/'demo_mmm_weekly.csv'
         st.markdown('<div class="cl-mmm-empty"><b>Bring the marketing evidence you actually have.</b><p>Use one analysis-ready table, or give CampaignLab separate platform and sales exports. It will infer the obvious, preserve unknowns, and ask only when a choice can change the answer.</p></div>',unsafe_allow_html=True)
-        st.download_button("Download the MMM sample dataset",data=demo_path.read_bytes(),file_name='demo_mmm_weekly.csv',mime='text/csv',use_container_width=True,key='download_mmm_demo_empty')
+        st.download_button("Download the MMM sample dataset",data=demo_path.read_bytes(),file_name='demo_mmm_weekly.csv',mime='text/csv',width="stretch",key='download_mmm_demo_empty')
         return
 
     st.markdown(f'<div class="cl-mmm-loaded"><span>DATA LOADED</span><b>{source}</b><p>{len(df):,} rows · {len(df.columns):,} columns</p></div>',unsafe_allow_html=True)
@@ -233,9 +253,33 @@ def render_mmm_lab():
     control_candidates=[c for c in numeric if c not in set(media_cols+[outcome_col])]
     control_defaults=[c for c in control_candidates if any(k in c.lower() for k in ['promo','price','holiday','distribution','competitor'])]
     control_cols=st.multiselect("What else could have moved demand?",control_candidates,default=control_defaults,help="Promotions, pricing, holidays, distribution or other drivers help keep media from stealing credit for demand it did not create.")
+    experiment_calibrations=[]
+    with st.expander("Optional · I have an incrementality result for one channel", expanded=False):
+        use_calibration=st.checkbox(
+            "Calibrate one channel with experimental evidence",
+            key="mmm_use_experiment_calibration",
+            help="Use only a credible experiment whose outcome and time unit match this MMM. CampaignLab will preserve the experiment's uncertainty and scope.",
+        )
+        if use_calibration and media_cols:
+            calibrated_channel=st.selectbox("Which channel was tested?",media_cols,key="mmm_calibration_channel")
+            typical=float(pd.to_numeric(df[calibrated_channel],errors="coerce").dropna().median())
+            cc1,cc2=st.columns(2)
+            with cc1:
+                baseline_spend=st.number_input("Baseline spend per modeled period",min_value=0.0,value=max(0.0,typical),key="mmm_calibration_baseline")
+                incremental_outcome=st.number_input("Estimated incremental outcome per period",value=0.0,key="mmm_calibration_effect")
+            with cc2:
+                treatment_spend=st.number_input("Treatment spend per modeled period",min_value=0.0,value=max(0.0,typical*1.2),key="mmm_calibration_treatment")
+                experiment_se=st.number_input("Standard error of that incremental outcome",min_value=0.000001,value=1.0,key="mmm_calibration_se")
+            experiment_calibrations=[{
+                "channel":calibrated_channel,"baseline_spend":float(baseline_spend),
+                "treatment_spend":float(treatment_spend),"incremental_outcome":float(incremental_outcome),
+                "standard_error":float(experiment_se),
+            }]
+            st.caption("Calibration applies only to this channel and stated spend contrast. It does not make the remaining MMM causal.")
     dataset_fingerprint=_dataset_fingerprint(df, source)
     period_name=_infer_period_name(df, date_col, builder_report)
-    model_signature=(dataset_fingerprint,date_col,outcome_col,tuple(media_cols),tuple(control_cols))
+    calibration_signature=tuple(tuple(sorted(item.items())) for item in experiment_calibrations)
+    model_signature=(dataset_fingerprint,date_col,outcome_col,tuple(media_cols),tuple(control_cols),calibration_signature)
     if not media_cols:
         st.warning("Select at least one media spend column so CampaignLab has a marketing mix to evaluate."); return
 
@@ -244,10 +288,10 @@ def render_mmm_lab():
     _readiness_card(readiness)
     if readiness.report.status=='blocked': return
 
-    if st.button("Run Marketing Mix Model",type='primary',use_container_width=True,key='run_mmm'):
+    if st.button("Run Marketing Mix Model",type='primary',width="stretch",key='run_mmm'):
         with st.spinner("Modeling carryover and saturation, separating baseline demand, and validating on unseen history…"):
             try:
-                st.session_state['mmm_result']=fit_mmm(df,date_col,outcome_col,media_cols,control_cols)
+                st.session_state['mmm_result']=fit_mmm(df,date_col,outcome_col,media_cols,control_cols,experiment_calibrations=experiment_calibrations)
                 st.session_state['mmm_result_signature']=model_signature
             except Exception as exc: st.error(str(exc)); return
     result=st.session_state.get('mmm_result')
@@ -279,18 +323,18 @@ def render_mmm_lab():
     series=pd.DataFrame(result['series']); series[date_col]=pd.to_datetime(series[date_col])
     fig=go.Figure(); fig.add_trace(go.Scatter(x=series[date_col],y=series['actual'],name='Actual')); fig.add_trace(go.Scatter(x=series[date_col],y=series['predicted'],name='Modeled')); fig.add_trace(go.Scatter(x=series[date_col],y=series['baseline'],name='Modeled baseline',line={'dash':'dot'}))
     fig.update_layout(title='Did the model track what actually happened?',hovermode='x unified',legend_title_text='',height=420,margin=dict(l=10,r=10,t=55,b=10))
-    st.plotly_chart(fig,use_container_width=True,config={'displaylogo':False,'responsive':True})
+    st.plotly_chart(fig,width="stretch",config={'displaylogo':False,'responsive':True})
     st.caption("Actual vs modeled shows fit. The dotted baseline is the model's non-media component under this specification — not a directly observed no-marketing counterfactual.")
 
     _step("What does the model say about the mix?", "04", "Separate historical contribution from future opportunity. The biggest past contributor is not automatically where the next dollar belongs.")
     rows=[]
-    for c,v in result['channels'].items(): rows.append({'Channel':c,'Modeled contribution':v['total'],'Media share':v['share_of_modeled_media'],'Carryover α':v['adstock_alpha']})
+    for c,v in result['channels'].items(): rows.append({'Channel':c,'Modeled contribution':v['total'],'Lower conditional bound':v.get('total_ci_low'),'Upper conditional bound':v.get('total_ci_high'),'Media share':v['share_of_modeled_media'],'Carryover α':v['adstock_alpha'],'Response family':v.get('saturation_family','exponential')})
     contrib=pd.DataFrame(rows).sort_values('Modeled contribution',ascending=False)
     leader=contrib.iloc[0]
     st.markdown(f'<div class="cl-mmm-insight"><span>WHAT CAMPAIGNLAB SEES</span><b>{str(leader["Channel"]).replace("_"," ").title()} is the largest modeled historical media contributor.</b><p>It represents {leader["Media share"]:.1%} of modeled media contribution in this specification. That is a historical attribution statement, not automatically a recommendation to spend more there.</p></div>',unsafe_allow_html=True)
     fig2=go.Figure(go.Bar(x=contrib['Modeled contribution'],y=contrib['Channel'],orientation='h',customdata=contrib[['Media share']],hovertemplate='%{y}<br>Modeled contribution: %{x:,.0f}<br>Share of modeled media: %{customdata[0]:.1%}<extra></extra>'))
     fig2.update_layout(title='Modeled historical media contribution',height=max(300,70*len(contrib)),margin=dict(l=10,r=10,t=55,b=10),yaxis={'categoryorder':'total ascending'})
-    st.plotly_chart(fig2,use_container_width=True,config={'displaylogo':False})
+    st.plotly_chart(fig2,width="stretch",config={'displaylogo':False})
 
     _step("Where should the next dollar go?", "05", "Change the total budget, compare the current mix with a constrained scenario, and inspect the modeled response curve before acting.")
     current_total=sum(float(pd.to_numeric(df[c],errors='coerce').fillna(0).tail(min(8,len(df))).mean()) for c in media_cols)
@@ -312,12 +356,12 @@ def render_mmm_lab():
     gain=opt['modeled_media_response_recommended']-opt['modeled_media_response_current']
     base=max(abs(opt['modeled_media_response_current']),1e-9); gain_pct=gain/base
     st.markdown(f'<div class="cl-mmm-opportunity"><span>MODELED OPPORTUNITY</span><b>Same {_money(opt["total_weekly_budget"], money_symbol)} budget per {period_name} · {gain_pct:+.1%} modeled media response</b><p>The optimizer reallocates within historically supported ranges. Treat this as a scenario to interrogate, not a causal guarantee.</p></div>',unsafe_allow_html=True)
-    st.dataframe(allocation.style.format({'Current': money_symbol + '{:,.0f}', 'CampaignLab scenario': money_symbol + '{:,.0f}', 'Change': money_symbol + '{:+,.0f}'}),use_container_width=True,hide_index=True)
+    st.dataframe(allocation.style.format({'Current': money_symbol + '{:,.0f}', 'CampaignLab scenario': money_symbol + '{:,.0f}', 'Change': money_symbol + '{:+,.0f}'}),width="stretch",hide_index=True)
 
     with st.expander("Explore channel response curves",expanded=False):
         st.caption("These curves show the response shape implied by the fitted beta MMM. Current and scenario spend are marked so you can see where CampaignLab believes marginal headroom remains.")
         for i,c in enumerate(media_cols):
-            st.plotly_chart(_response_curve(c,result['channels'][c],opt['current'][c],opt['recommended'][c], period_name),use_container_width=True,config={'displaylogo':False},key=f'mmm_curve_{i}_{c}')
+            st.plotly_chart(_response_curve(c,result['channels'][c],opt['current'][c],opt['recommended'][c], period_name),width="stretch",config={'displaylogo':False},key=f'mmm_curve_{i}_{c}')
     st.caption(opt['guardrail'])
 
     _step("CampaignLab's decision", "06", "A model is useful only when it changes what you do — and tells you what could make that decision wrong.")
@@ -330,22 +374,44 @@ def render_mmm_lab():
     else:
         move="Keep the current mix close to where it is; this model does not find a strong enough reallocation signal to justify a dramatic move."
     confidence="Moderate" if strength=="Moderate" and readiness.report.status=='ready' else "Cautious"
-    st.markdown(f'''<div class="cl-mmm-decision">
-      <span>CAMPAIGNLAB'S DECISION</span><h3>{move}</h3>
-      <div class="cl-decision-grid"><div><small>WHY</small><p>{"Media did not improve unseen-period performance enough over baseline + controls to justify acting on the optimizer." if strength == "Limited" else f"The constrained scenario improves modeled media response by <b>{gain_pct:+.1%}</b> without increasing the total budget for that period."}</p></div><div><small>CONFIDENCE</small><p><b>{confidence}</b>. The model generalizes through time, but observational MMM cannot eliminate every alternative explanation.</p></div><div><small>WHAT COULD MAKE THIS WRONG</small><p>Unmeasured promotions, competitor activity, correlated channel changes, or response outside historical spend support.</p></div><div><small>BEST NEXT EVIDENCE</small><p>Validate the highest-upside reallocation with a geo-lift or other incrementality experiment before a large irreversible move.</p></div></div>
-    </div>''',unsafe_allow_html=True)
-    if st.button("🔬 Validate this decision in Evidence Lab →", use_container_width=True, key="mmm_to_evidence"):
+    caveat="Unmeasured promotions, competitor activity, correlated channel changes, or response outside historical spend support could change the conclusion."
+    best_next_evidence="Validate the highest-upside reallocation with a geo-lift or another credible incrementality design before a large irreversible move."
+    decision = decision_from_mmm(
+        move=move,
+        outcome=outcome_col,
+        model_result=result,
+        readiness_status=readiness.report.status,
+        gain_pct=gain_pct,
+        next_check=best_next_evidence,
+        caveat=caveat,
+    )
+    render_decision_record(decision, key="mmm_decision")
+    render_decision_memory()
+    if st.button("🔬 Validate this decision in Evidence Lab →", width="stretch", key="mmm_to_evidence"):
         prepare_mmm_handoff(
             move=move,
             outcome=outcome_col,
             confidence=confidence,
-            caveat="Unmeasured promotions, competitor activity, correlated channel changes, or response outside historical spend support could change the conclusion.",
-            best_next_evidence="Validate the highest-upside reallocation with a geo-lift or another credible incrementality design before a large irreversible move.",
+            caveat=caveat,
+            best_next_evidence=best_next_evidence,
             budget_period=f"Per-{period_name} allocation scenario",
         )
         st.query_params["page"] = "evidence"
         st.rerun()
 
     with st.expander("Analyst view · See the machinery"):
-        st.write("Each channel receives a geometric adstock transformation for carryover, then a saturating response transform. CampaignLab selects conservative transformation parameters from training history, fits non-negative media effects alongside trend, seasonality and controls, regularizes the model, and chooses the penalty using a chronological holdout.")
-        st.write("The budget optimizer searches within historically plausible spend bounds. This beta intentionally reports observational evidence strength rather than claiming causal certainty. Experimental calibration is the next major trust upgrade.")
+        st.write("Each channel receives a geometric adstock transformation for carryover, then competes across exponential and Hill saturation shapes. CampaignLab selects transformations from training history, fits non-negative media effects alongside trend, seasonality and controls, and chooses regularization using rolling validation inside the training window before scoring once on the final chronological holdout.")
+        st.write("Contribution intervals use a residual block bootstrap. They are conditional on the selected response shape and do not represent full Bayesian posterior or causal uncertainty.")
+        st.write("The budget optimizer searches within historically plausible spend bounds. This beta intentionally reports observational evidence strength rather than claiming causal certainty. When supplied, experiment calibration affects only its stated channel and spend contrast.")
+        backtests=result['model'].get('expanding_window_backtests') or []
+        if backtests:
+            st.markdown("**Expanding-window backtests**")
+            st.dataframe(pd.DataFrame(backtests),width="stretch",hide_index=True)
+        sensitivity=result['model'].get('control_sensitivity') or []
+        if sensitivity:
+            st.markdown("**Leave-one-control-out sensitivity**")
+            st.dataframe(pd.DataFrame(sensitivity),width="stretch",hide_index=True)
+        calibrations=result['model'].get('experiment_calibration') or []
+        if calibrations:
+            st.markdown("**Experiment calibration provenance**")
+            st.dataframe(pd.DataFrame(calibrations),width="stretch",hide_index=True)

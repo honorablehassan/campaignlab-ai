@@ -41,6 +41,23 @@ def saturation(x: np.ndarray, scale: float) -> np.ndarray:
     return 1.0 - np.exp(-x / scale)
 
 
+def hill_saturation(x: np.ndarray, half_saturation: float, slope: float = 1.0) -> np.ndarray:
+    """Bounded Hill response curve with an interpretable half-saturation point."""
+    half_saturation = max(float(half_saturation), 1e-9)
+    slope = max(float(slope), 1e-6)
+    x = np.maximum(np.asarray(x, dtype=float), 0.0)
+    powered = np.power(x, slope)
+    return powered / (powered + np.power(half_saturation, slope))
+
+
+def media_response(x: np.ndarray, transform: dict[str, Any]) -> np.ndarray:
+    family = transform.get("saturation_family", "exponential")
+    scale = float(transform["saturation_scale"])
+    if family == "hill":
+        return hill_saturation(x, scale, float(transform.get("saturation_slope", 1.0)))
+    return saturation(x, scale)
+
+
 def _infer_frequency(dates: pd.Series) -> str:
     if len(dates) < 3:
         return "unknown"
@@ -160,7 +177,7 @@ def _baseline_features(dates: pd.Series, controls: pd.DataFrame) -> tuple[np.nda
     return np.column_stack(cols),names
 
 
-def _choose_media_transform(spend: np.ndarray, outcome: np.ndarray, baseline_x: np.ndarray) -> tuple[float,float,np.ndarray]:
+def _choose_media_transform(spend: np.ndarray, outcome: np.ndarray, baseline_x: np.ndarray) -> tuple[dict[str, Any], np.ndarray]:
     # Select a conservative transformation on training data only. This is not causal identification;
     # it is a deterministic response-shape choice used by the beta MMM.
     base_beta=np.linalg.lstsq(baseline_x,outcome,rcond=None)[0]
@@ -170,18 +187,54 @@ def _choose_media_transform(spend: np.ndarray, outcome: np.ndarray, baseline_x: 
         ad=geometric_adstock(np.maximum(spend,0),alpha)
         positives=ad[ad>0]
         if not len(positives):
-            scale=1.0
-            sat=np.zeros_like(ad)
+            candidates=[("exponential",1.0,1.0,np.zeros_like(ad))]
         else:
-            scale=float(np.median(positives))
-            sat=saturation(ad,scale)
-        corr=np.corrcoef(sat,residual)[0,1] if np.std(sat)>0 and np.std(residual)>0 else 0.0
-        score=abs(float(corr)) if np.isfinite(corr) else 0.0
-        if best is None or score>best[0]: best=(score,alpha,scale,sat)
-    return best[1],best[2],best[3]
+            scales=sorted({float(np.quantile(positives,q)) for q in (.35,.50,.65,.80)})
+            candidates=[]
+            for scale in scales:
+                candidates.append(("exponential",scale,1.0,saturation(ad,scale)))
+                for slope in (.7,1.0,1.5,2.0):
+                    candidates.append(("hill",scale,slope,hill_saturation(ad,scale,slope)))
+        for family,scale,slope,sat in candidates:
+            corr=np.corrcoef(sat,residual)[0,1] if np.std(sat)>0 and np.std(residual)>0 else 0.0
+            score=abs(float(corr)) if np.isfinite(corr) else 0.0
+            # Prefer simpler curves when fit is effectively tied.
+            complexity_penalty=.001 if family=="hill" else 0.0
+            score-=complexity_penalty
+            if best is None or score>best[0]:
+                best=(score,{"adstock_alpha":float(alpha),"saturation_scale":float(scale),"saturation_family":family,"saturation_slope":float(slope)},sat)
+    return best[1],best[2]
 
 
-def fit_mmm(df: pd.DataFrame, date_col: str, outcome_col: str, media_cols: list[str], control_cols: list[str] | None = None) -> dict[str,Any]:
+def _fit_constrained_ridge(X: np.ndarray, y: np.ndarray, media_start: int, lam: float) -> np.ndarray:
+    lower=np.full(X.shape[1],-np.inf); lower[media_start:]=0.0
+    upper=np.full(X.shape[1],np.inf)
+    reg=np.sqrt(lam)*np.eye(X.shape[1]); reg[0,0]=0
+    fit=lsq_linear(np.vstack([X,reg]),np.concatenate([y,np.zeros(X.shape[1])]),bounds=(lower,upper),lsmr_tol="auto")
+    return fit.x
+
+
+def _rolling_splits(training_end: int) -> list[tuple[int, int]]:
+    validation=max(6,min(13,training_end//6))
+    starts=sorted({max(30,training_end-validation*k) for k in (3,2,1)})
+    return [(start,min(start+validation,training_end)) for start in starts if start < training_end]
+
+
+def _block_resample(values: np.ndarray, block_size: int, rng: np.random.Generator) -> np.ndarray:
+    if not len(values): return values.copy()
+    starts=rng.integers(0,max(1,len(values)-block_size+1),size=int(np.ceil(len(values)/block_size)))
+    return np.concatenate([values[s:s+block_size] for s in starts])[:len(values)]
+
+
+def fit_mmm(
+    df: pd.DataFrame,
+    date_col: str,
+    outcome_col: str,
+    media_cols: list[str],
+    control_cols: list[str] | None = None,
+    uncertainty_samples: int = 30,
+    experiment_calibrations: list[dict[str, Any]] | None = None,
+) -> dict[str,Any]:
     control_cols=control_cols or []
     ready=mmm_readiness(df,date_col,outcome_col,media_cols,control_cols)
     if ready.report.status=="blocked":
@@ -200,25 +253,77 @@ def fit_mmm(df: pd.DataFrame, date_col: str, outcome_col: str, media_cols: list[
     base_x,base_names=_baseline_features(d[date_col],d[control_cols])
     transforms={}; media_x=[]
     for c in media_cols:
-        alpha,scale,sat=_choose_media_transform(d.loc[:split-1,c].to_numpy(float),y[:split],base_x[:split])
-        full_sat=saturation(geometric_adstock(d[c].to_numpy(float),alpha),scale)
-        transforms[c]={"adstock_alpha":float(alpha),"saturation_scale":float(scale)}
+        transform,_=_choose_media_transform(d.loc[:split-1,c].to_numpy(float),y[:split],base_x[:split])
+        full_sat=media_response(geometric_adstock(d[c].to_numpy(float),transform["adstock_alpha"]),transform)
+        transforms[c]=transform
         media_x.append(full_sat)
     mx=np.column_stack(media_x)
     X=np.column_stack([base_x,mx])
     media_start=base_x.shape[1]
-    lower=np.full(X.shape[1],-np.inf); lower[media_start:]=0.0
-    upper=np.full(X.shape[1],np.inf)
-    best=None
+    best=None; rolling=[]
+    folds=_rolling_splits(split)
     for lam in (.01,.1,1.0,10.0,100.0):
-        Xtr=X[:split]; ytr=y[:split]
-        reg=np.sqrt(lam)*np.eye(X.shape[1]); reg[0,0]=0
-        Xaug=np.vstack([Xtr,reg]); yaug=np.concatenate([ytr,np.zeros(X.shape[1])])
-        fit=lsq_linear(Xaug,yaug,bounds=(lower,upper),lsmr_tol="auto")
-        pred=X[split:]@fit.x
-        mae=mean_absolute_error(y[split:],pred)
-        if best is None or mae<best[0]: best=(mae,lam,fit.x)
-    holdout_mae,lam,beta=best
+        fold_wapes=[]
+        for train_end,val_end in folds:
+            fold_beta=_fit_constrained_ridge(X[:train_end],y[:train_end],media_start,lam)
+            actual=y[train_end:val_end]; forecast=X[train_end:val_end]@fold_beta
+            fold_wapes.append(float(np.abs(actual-forecast).sum()/max(np.abs(actual).sum(),1e-9)))
+        score=float(np.mean(fold_wapes)) if fold_wapes else np.inf
+        rolling.append({"ridge_lambda":float(lam),"mean_wape":score,"fold_wapes":fold_wapes})
+        if best is None or score<best[0]: best=(score,lam)
+    _,lam=best
+    beta=_fit_constrained_ridge(X[:split],y[:split],media_start,lam)
+    uncalibrated_beta=beta.copy()
+    boot_coefficients=[]
+    uncertainty_samples=max(0,min(int(uncertainty_samples),200))
+    if uncertainty_samples:
+        rng=np.random.default_rng(20260904)
+        fitted_train=X[:split]@beta; residuals=y[:split]-fitted_train
+        block_size=max(2,min(8,int(round(np.sqrt(split)/2))))
+        for _ in range(uncertainty_samples):
+            boot_y=fitted_train+_block_resample(residuals,block_size,rng)
+            boot_coefficients.append(_fit_constrained_ridge(X[:split],boot_y,media_start,lam)[media_start:])
+    boot=np.asarray(boot_coefficients,float) if boot_coefficients else np.empty((0,len(media_cols)))
+
+    # Optional experiment calibration. The experiment supplies an incremental
+    # outcome and uncertainty for a known spend contrast. CampaignLab converts
+    # that contrast onto the selected response scale, then precision-weights it
+    # with the conditional MMM coefficient distribution.
+    calibration_details=[]
+    for item in experiment_calibrations or []:
+        channel=str(item.get("channel") or "")
+        if channel not in media_cols:
+            raise ValueError(f"Experiment calibration channel {channel!r} is not in the modeled media channels.")
+        baseline_spend=float(item["baseline_spend"]); treatment_spend=float(item["treatment_spend"])
+        incremental=float(item["incremental_outcome"]); standard_error=float(item["standard_error"])
+        if baseline_spend < 0 or treatment_spend < 0 or standard_error <= 0:
+            raise ValueError("Experiment calibration spend must be non-negative and standard_error must be positive.")
+        j=media_cols.index(channel); info=transforms[channel]
+        steady=np.asarray([baseline_spend,treatment_spend],float)/max(1-float(info["adstock_alpha"]),1e-6)
+        response_delta=float(np.diff(media_response(steady,info))[0])
+        if abs(response_delta) < 1e-8:
+            raise ValueError(f"Experiment calibration for {channel} has too little modeled response contrast to identify a coefficient.")
+        experimental_beta=incremental/response_delta
+        experimental_se=standard_error/abs(response_delta)
+        model_beta=float(beta[media_start+j])
+        model_se=float(np.std(boot[:,j],ddof=1)) if len(boot)>1 else max(abs(model_beta)*.5,1e-6)
+        model_precision=1/max(model_se**2,1e-12); experiment_precision=1/max(experimental_se**2,1e-12)
+        combined=max(0.0,(model_beta*model_precision+experimental_beta*experiment_precision)/(model_precision+experiment_precision))
+        experiment_weight=float(experiment_precision/(model_precision+experiment_precision))
+        beta[media_start+j]=combined
+        if len(boot):
+            exp_draws=rng.normal(experimental_beta,experimental_se,size=len(boot))
+            boot[:,j]=np.maximum(0.0,(boot[:,j]*model_precision+exp_draws*experiment_precision)/(model_precision+experiment_precision))
+        calibration_details.append({
+            "channel":channel,"baseline_spend":baseline_spend,"treatment_spend":treatment_spend,
+            "incremental_outcome":incremental,"standard_error":standard_error,
+            "response_delta":response_delta,"model_coefficient_before":model_beta,
+            "experimental_coefficient":float(experimental_beta),"coefficient_after":float(combined),
+            "experiment_weight":experiment_weight,
+            "scope":"Precision-weighted conditional calibration on the selected response transformation; not a full Bayesian prior or universal causal correction.",
+        })
+
+    holdout_mae=float(mean_absolute_error(y[split:],X[split:]@beta))
     pred=X@beta
     r2=float(r2_score(y,pred)); holdout_pred=pred[split:]; holdout_y=y[split:]
     holdout_wape=float(np.abs(holdout_y-holdout_pred).sum()/max(np.abs(holdout_y).sum(),1e-9))
@@ -227,35 +332,84 @@ def fit_mmm(df: pd.DataFrame, date_col: str, outcome_col: str, media_cols: list[
     base_holdout_pred=base_x[split:]@base_fit
     baseline_holdout_wape=float(np.abs(holdout_y-base_holdout_pred).sum()/max(np.abs(holdout_y).sum(),1e-9))
     media_holdout_improvement=float((baseline_holdout_wape-holdout_wape)/max(baseline_holdout_wape,1e-9))
+
+    # Multiple expanding-window backtests reveal whether final-holdout quality
+    # is representative or a lucky period.
+    backtests=[]
+    for train_end,val_end in _rolling_splits(split):
+        fold_beta=_fit_constrained_ridge(X[:train_end],y[:train_end],media_start,lam)
+        actual=y[train_end:val_end]; forecast=X[train_end:val_end]@fold_beta
+        fold_wape=float(np.abs(actual-forecast).sum()/max(np.abs(actual).sum(),1e-9))
+        fold_base=np.linalg.lstsq(base_x[:train_end],y[:train_end],rcond=None)[0]
+        fold_base_pred=base_x[train_end:val_end]@fold_base
+        fold_base_wape=float(np.abs(actual-fold_base_pred).sum()/max(np.abs(actual).sum(),1e-9))
+        backtests.append({
+            "train_periods":int(train_end),"validation_periods":int(val_end-train_end),
+            "wape":fold_wape,"baseline_wape":fold_base_wape,
+            "media_improvement":float((fold_base_wape-fold_wape)/max(fold_base_wape,1e-9)),
+        })
+
+    # Leave-one-control-out sensitivity asks how much channel contribution
+    # changes when each observed alternative demand driver is removed.
+    sensitivity=[]
+    reference_totals=np.asarray([float((mx[:,j]*uncalibrated_beta[media_start+j]).sum()) for j in range(len(media_cols))])
+    for control in control_cols:
+        control_index=base_names.index(control)
+        reduced_base=np.delete(base_x,control_index,axis=1)
+        reduced_X=np.column_stack([reduced_base,mx])
+        reduced_beta=_fit_constrained_ridge(reduced_X[:split],y[:split],reduced_base.shape[1],lam)
+        reduced_totals=np.asarray([float((mx[:,j]*reduced_beta[reduced_base.shape[1]+j]).sum()) for j in range(len(media_cols))])
+        relative=np.abs(reduced_totals-reference_totals)/np.maximum(np.abs(reference_totals),1e-9)
+        sensitivity.append({
+            "removed_control":control,"max_channel_contribution_change":float(np.max(relative)),
+            "mean_channel_contribution_change":float(np.mean(relative)),
+        })
     contributions={}
     for j,c in enumerate(media_cols):
         contrib=mx[:,j]*beta[media_start+j]
-        contributions[c]={"total":float(contrib.sum()),"mean_period":float(contrib.mean()),"share_of_modeled_media":0.0,"coefficient":float(beta[media_start+j]),**transforms[c]}
+        boot_totals=boot[:,j,None]*mx[:,j] if len(boot) else np.empty((0,n))
+        ci=(np.quantile(boot_totals.sum(axis=1),[.025,.975]) if len(boot) else [np.nan,np.nan])
+        contributions[c]={"total":float(contrib.sum()),"total_ci_low":float(ci[0]),"total_ci_high":float(ci[1]),"mean_period":float(contrib.mean()),"share_of_modeled_media":0.0,"coefficient":float(beta[media_start+j]),**transforms[c]}
     total_media=sum(v["total"] for v in contributions.values())
     for v in contributions.values(): v["share_of_modeled_media"]=float(v["total"]/total_media) if total_media>0 else 0.0
     baseline=pred-sum(mx[:,j]*beta[media_start+j] for j in range(len(media_cols)))
     # evidence strength is intentionally conservative and diagnostic, not a causal probability.
     corr_penalty=max([abs(v) for _,_,v in ready.high_correlations],default=0)
+    positive_backtest_share=(
+        float(np.mean([fold["media_improvement"] > 0 for fold in backtests]))
+        if backtests else 0.0
+    )
+    max_control_sensitivity=max(
+        [row["max_channel_contribution_change"] for row in sensitivity],
+        default=0.0,
+    )
     if media_holdout_improvement < .02:
         strength="Limited"
-    elif holdout_wape<=.12 and ready.report.score>=80 and corr_penalty<.8 and media_holdout_improvement>=.05:
+    elif (
+        holdout_wape<=.12 and ready.report.score>=80 and corr_penalty<.8
+        and media_holdout_improvement>=.05 and positive_backtest_share>=.67
+        and max_control_sensitivity<.75
+    ):
         strength="Moderate"
-    elif holdout_wape<=.20 and ready.report.score>=65:
+    elif (
+        holdout_wape<=.20 and ready.report.score>=65
+        and positive_backtest_share>=.5 and max_control_sensitivity<1.5
+    ):
         strength="Limited-to-moderate"
     else: strength="Limited"
     return {
-        "method":"marketing_mix_model_beta",
+        "method":"marketing_mix_model_native_v2",
         "status":"Beta",
         "readiness":ready.to_dict(),
         "n_observations":n,
         "holdout_periods":n-split,
-        "model":{"r2":r2,"holdout_mae":float(holdout_mae),"holdout_wape":holdout_wape,"baseline_holdout_wape":baseline_holdout_wape,"media_holdout_improvement":media_holdout_improvement,"ridge_lambda":float(lam),"evidence_strength":strength},
+        "model":{"r2":r2,"holdout_mae":float(holdout_mae),"holdout_wape":holdout_wape,"baseline_holdout_wape":baseline_holdout_wape,"media_holdout_improvement":media_holdout_improvement,"ridge_lambda":float(lam),"rolling_validation":rolling,"expanding_window_backtests":backtests,"positive_backtest_share":positive_backtest_share,"control_sensitivity":sensitivity,"max_control_sensitivity":max_control_sensitivity,"experiment_calibration":calibration_details,"uncertainty_samples":uncertainty_samples,"uncertainty_scope":"Conditional residual block bootstrap; calibrated channels also include supplied experiment standard error. Response-shape and remaining causal-identification uncertainty are not included.","evidence_strength":strength},
         "channels":contributions,
         "baseline_total":float(baseline.sum()),
         "actual_total":float(y.sum()),
         "predicted_total":float(pred.sum()),
         "series":pd.DataFrame({date_col:d[date_col],"actual":y,"predicted":pred,"baseline":baseline}).to_dict("records"),
-        "warning":"This beta MMM estimates observational contribution under explicit model assumptions. It does not prove causality. Experimental or quasi-experimental calibration should strengthen high-stakes allocation decisions.",
+        "warning":"This native V2 beta MMM estimates observational contribution under explicit model assumptions. Conditional intervals do not include every source of model uncertainty and do not prove causality. Supplied experiments calibrate only their stated channel, contrast, population, outcome and period.",
     }
 
 
@@ -278,9 +432,9 @@ def optimize_budget(df: pd.DataFrame, model_result: dict[str,Any], media_cols: l
     def expected_media(x):
         val=0.0
         for i,c in enumerate(media_cols):
-            info=channels[c]; alpha=info["adstock_alpha"]; scale=info["saturation_scale"]; beta=info["coefficient"]
+            info=channels[c]; alpha=info["adstock_alpha"]; beta=info["coefficient"]
             steady=x[i]/max(1-alpha,1e-6)
-            val += beta*(1-np.exp(-steady/max(scale,1e-9)))
+            val += beta*float(media_response(np.asarray([steady]),info)[0])
         return val
     res=minimize(lambda x:-expected_media(x),x0,bounds=[(0,u) for u in upper],constraints={"type":"eq","fun":lambda x:x.sum()-total},method="SLSQP",options={"maxiter":500,"ftol":1e-10})
     x=res.x if res.success else x0

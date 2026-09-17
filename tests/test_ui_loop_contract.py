@@ -48,7 +48,25 @@ def test_mmm_does_not_hardcode_usd_display():
     assert '"Source units"' in MMM
 
 
+def test_mmm_has_one_canonical_decision_authority():
+    assert "render_decision_record(decision" in MMM
+    assert '<div class="cl-mmm-decision">' not in MMM
+
+
+def test_evidence_joins_canonical_decision_contract():
+    assert "decision_from_evidence" in EVIDENCE
+    assert 'render_decision_record(decision, key="evidence_binary_decision")' in EVIDENCE
+    assert 'render_decision_record(decision, key="evidence_dataset_decision")' in EVIDENCE
+
+
 def test_about_keeps_founder_surface_and_side_support():
     assert "cl-founder-paper" in ABOUT
     assert "Keep the experiment moving." in ABOUT
     assert "cl-about-rail" in ABOUT
+
+
+def test_strategy_keeps_original_result_surface_without_duplicate_decision_record():
+    assert "CAMPAIGNLAB'S CALL" in STRATEGY
+    assert "🎯 The Move" in STRATEGY
+    assert "🏆 Why It Wins" in STRATEGY
+    assert "render_decision_record" not in STRATEGY

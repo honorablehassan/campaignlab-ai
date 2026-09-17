@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from analytics.directory_catalog import DECISION_FAMILIES, METHOD_PRESENTATION, LAB_SPECIALS
 
-import io
 import json
 import hashlib
 from pathlib import Path
@@ -11,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from analytics.ab_binary import analyze_binary_ab, required_sample_size_per_group
+from analytics.result_contract import analytical_result
 from analytics.data_profile import profile_dataframe
 from analytics.data_builder import understand_source
 from analytics.dataset_intelligence import analyze_dataset_intelligence
@@ -18,6 +18,8 @@ from analytics.method_ranker import rank_methods
 from analytics.method_registry import methods_by_family, get_method, METHODS
 from analytics.tool_runtime import EvidenceToolRuntime
 from engines.evidence_orchestrator import run_evidence_orchestrator
+from engines.decision_kernel import decision_from_evidence
+from engines.evidence_arbitration import arbitrate_evidence
 from engines.result_qa import ask_about_result
 from visualization.decision_visualization import build_visualization, recommend_visualizations
 from ui.copy_engine import dataset_question_placeholder, evidence_design_placeholder, evidence_outcome_placeholder
@@ -25,6 +27,7 @@ from ui.theme import kicker
 from ui.brand import intelligence_label, lab_mark, utility_mark
 from ui.method_explainer import plain as method_plain, render_method_explainer
 from ui.reporting import build_decision_report
+from ui.decision_record import render_decision_memory, render_decision_record
 from visualization.interactive_charts import (group_outcome_rate as interactive_group_rate, efficiency_rank as interactive_efficiency_rank, spend_vs_revenue as interactive_spend_vs_revenue, performance_over_time as interactive_time, group_trends as interactive_group_trends, retention_heatmap as interactive_retention, media_funnel as interactive_funnel, missingness as interactive_missingness, numeric_distribution as interactive_distribution, ab_conversion_result, ab_effect_interval)
 from visualization.evidence_charts import (
     conversion_rate_chart,
@@ -194,13 +197,8 @@ def _render_interactive_chart(df,intel,plan):
     return None
 
 def _load_dataset(uploaded_file) -> pd.DataFrame:
-    raw = uploaded_file.getvalue()
-    max_bytes = 50 * 1024 * 1024
-    if len(raw) > max_bytes:
-        raise ValueError("File is larger than the current 50 MB safety limit. Reduce the extract before analysis.")
-    if uploaded_file.name.lower().endswith(".csv"):
-        return pd.read_csv(io.BytesIO(raw), low_memory=False)
-    return pd.read_excel(io.BytesIO(raw))
+    from core.uploads import load_tabular_upload
+    return load_tabular_upload(uploaded_file)
 
 
 def _render_handoff():
@@ -302,7 +300,7 @@ def _render_design_test():
             "it will show what needs to be established before choosing a method, without asking you to invent statistical details."
         )
 
-    if st.button("Find My Evidence Path", type="primary", use_container_width=True, key="build_evidence_plan"):
+    if st.button("Find My Evidence Path", type="primary", width="stretch", key="build_evidence_plan"):
         if not question.strip():
             st.warning("Give CampaignLab the uncertainty you want to resolve first.")
         else:
@@ -394,14 +392,14 @@ def _render_design_test():
         with c1:
             st.button(
                 "Analyze a structured test →",
-                use_container_width=True,
+                width="stretch",
                 key="route_existing_results",
                 on_click=lambda: st.session_state.update(evidence_route="📈 I already ran a test"),
             )
         with c2:
             st.button(
                 "Bring the data →",
-                use_container_width=True,
+                width="stretch",
                 key="route_existing_data",
                 on_click=lambda: st.session_state.update(evidence_route="📂 I have data"),
             )
@@ -410,7 +408,7 @@ def _render_design_test():
     if design_path in {"time", "group"}:
         if st.button(
             "Bring data for CampaignLab to inspect →",
-            use_container_width=True,
+            width="stretch",
             key=f"route_design_data_{design_path}",
             on_click=lambda: st.session_state.update(evidence_route="📂 I have data"),
         ):
@@ -419,7 +417,7 @@ def _render_design_test():
 
     if design_path == "triage":
         st.caption("CampaignLab has reduced the uncertainty to one operational distinction. Change the situation above when you know it, or bring whatever evidence already exists and let CampaignLab inspect it.")
-        if st.button("Bring whatever data I have →", use_container_width=True, key="triage_to_data"):
+        if st.button("Bring whatever data I have →", width="stretch", key="triage_to_data"):
             st.session_state.evidence_route = "📂 I have data"
             st.rerun()
         return
@@ -446,7 +444,7 @@ def _render_design_test():
         st.caption("Choose one only if you want CampaignLab to continue into a supported design-time calculator. Your evidence plan above is still usable.")
         st.button(
             "Bring example data for CampaignLab to inspect →",
-            use_container_width=True,
+            width="stretch",
             key="route_unknown_measurement_data",
             on_click=lambda: st.session_state.update(evidence_route="📂 I have data"),
         )
@@ -497,7 +495,7 @@ def _render_design_test():
         st.write("Alpha: 5%, two-sided")
         st.write(f"Minimum detectable effect: +{mde_pp:.2f} percentage points")
 
-    if st.button("Size This Test", type="primary", use_container_width=True, key="design_binary_ab"):
+    if st.button("Size This Test", type="primary", width="stretch", key="design_binary_ab"):
         baseline = baseline_pct / 100
         target = baseline + mde_pp / 100
         if target >= 1:
@@ -574,7 +572,7 @@ def _render_analyze_results():
     )
     if experiment_type != "A/B test — binary outcome":
         st.info("CampaignLab cannot safely reconstruct every test from a few summary numbers. Bring the raw experiment data instead and CampaignLab can inspect its structure, identify supported methods, and tell you what the evidence can actually answer.")
-        if st.button("Bring the experiment data →", use_container_width=True, key="results_to_data"):
+        if st.button("Bring the experiment data →", width="stretch", key="results_to_data"):
             st.session_state.evidence_route = "📂 I have data"
             st.rerun()
         return
@@ -603,7 +601,7 @@ def _render_analyze_results():
             help="CampaignLab uses this business threshold separately from statistical significance.",
         )
 
-    if st.button("Run Evidence Analysis", type="primary", use_container_width=True, key="run_ab_results"):
+    if st.button("Run Evidence Analysis", type="primary", width="stretch", key="run_ab_results"):
         try:
             st.session_state["evidence_ab_result"] = analyze_binary_ab(
                 int(control_n),
@@ -633,7 +631,20 @@ def _render_analyze_results():
         return
 
     st.divider()
-    _render_analysis_call(result)
+    envelope = analytical_result("analyze_binary_ab", result.to_dict(), question="Should the treatment replace the control?")
+    decision = decision_from_evidence(
+        question="Should the treatment replace the control?",
+        analytical_result=envelope,
+        next_action=(
+            "Validate the experiment assignment and logging before acting."
+            if result.srm_status == "fail"
+            else "Run an adequately powered follow-up against the same business threshold."
+            if result.verdict == "HOLD"
+            else "Proceed according to the tested decision while monitoring the primary outcome."
+        ),
+    )
+    render_decision_record(decision, key="evidence_binary_decision")
+    render_decision_memory()
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Control conversion", _pct(result.control_rate))
@@ -652,10 +663,10 @@ def _render_analyze_results():
 
     chart1, chart2 = st.columns(2)
     with chart1:
-        st.plotly_chart(ab_conversion_result(result), use_container_width=True, config={"displaylogo":False,"responsive":True})
+        st.plotly_chart(ab_conversion_result(result), width="stretch", config={"displaylogo":False,"responsive":True})
         st.caption("What this shows: observed conversion in each arm. Hover for exact rates and sample sizes.")
     with chart2:
-        st.plotly_chart(ab_effect_interval(result), use_container_width=True, config={"displaylogo":False,"responsive":True})
+        st.plotly_chart(ab_effect_interval(result), width="stretch", config={"displaylogo":False,"responsive":True})
         st.caption("What this shows: estimated lift, uncertainty around it, and the business threshold when supplied.")
 
     with st.expander("See statistical detail"):
@@ -681,12 +692,22 @@ def _render_analyze_data(client):
     st.markdown("### Bring your data — or try a realistic example")
     demo1, demo2 = st.columns(2)
     with demo1:
-        if st.button("🚀 Load Marketing Growth Demo", use_container_width=True, key="load_marketing_demo"):
+        st.markdown('''<div class="cl-demo-card evidence">
+          <span>EXPERIMENT DEMO</span><h3>Can a campaign change conversion?</h3>
+          <p>A randomized treatment across four acquisition channels with a known lift hidden inside realistic customer-level noise.</p>
+          <small>Explore experiment checks, effect size, uncertainty and the decision the result supports.</small>
+        </div>''', unsafe_allow_html=True)
+        if st.button("🚀 Load Marketing Growth Demo", width="stretch", key="load_marketing_demo"):
             st.session_state["evidence_demo_dataset"] = "demo_marketing_evidence.csv"
     with demo2:
-        if st.button("🛰️ Load Rollout / Causal Demo", use_container_width=True, key="load_rollout_demo"):
+        st.markdown('''<div class="cl-demo-card evidence">
+          <span>CAUSAL DEMO</span><h3>Did a market rollout create lift?</h3>
+          <p>A 30-market panel with parallel pre-trends and a dynamic post-launch effect built into the synthetic outcome.</p>
+          <small>Explore Difference-in-Differences, event-study eligibility and the limits of the claim.</small>
+        </div>''', unsafe_allow_html=True)
+        if st.button("🛰️ Load Rollout / Causal Demo", width="stretch", key="load_rollout_demo"):
             st.session_state["evidence_demo_dataset"] = "demo_panel_rollout.csv"
-    st.caption("Marketing demo: variants, conversion, revenue and channels. Rollout demo: panel/time-series structure for causal methods such as DiD and event study.")
+    st.caption("Both demos are deterministic synthetic scenarios with documented known signals. No customer data is used.")
 
     uploaded = st.file_uploader(
         "Or upload your own CSV / Excel",
@@ -771,7 +792,7 @@ def _render_analyze_data(client):
             for role,cols in intel.role_map.items():
                 if cols:
                     role_rows.append({"CampaignLab role": role.replace("_"," ").title(), "Detected column(s)": ", ".join(cols[:8])})
-            if role_rows: st.dataframe(pd.DataFrame(role_rows),use_container_width=True,hide_index=True)
+            if role_rows: st.dataframe(pd.DataFrame(role_rows),width="stretch",hide_index=True)
             else: st.write("CampaignLab did not infer high-confidence analytical roles yet.")
 
     warnings=[f for f in intel.quality_findings if f["level"]=="warning"]
@@ -819,19 +840,19 @@ def _render_analyze_data(client):
         st.caption(plan["why"])
         interactive=_render_interactive_chart(df,intel,plan)
         if interactive is not None:
-            st.plotly_chart(interactive,use_container_width=True,config={"displaylogo":False,"responsive":True})
+            st.plotly_chart(interactive,width="stretch",config={"displaylogo":False,"responsive":True})
             rendered += 1
             continue
         fig=build_visualization(df,intel,plan["id"])
         if fig is not None:
-            st.pyplot(fig,clear_figure=True,use_container_width=True)
+            st.pyplot(fig,clear_figure=True,width="stretch")
             rendered += 1
     if rendered==0:
         st.info("No chart is earning its place yet. CampaignLab would rather show nothing than fill the page with dashboard wallpaper.")
 
     if view_mode == "Analyst":
         with st.expander("Preview data"):
-            st.dataframe(df.head(100), use_container_width=True, hide_index=True)
+            st.dataframe(df.head(100), width="stretch", hide_index=True)
 
     st.divider()
     intelligence_label("CampaignLab plan")
@@ -854,7 +875,7 @@ def _render_analyze_data(client):
     if client is None:
         st.info("The deterministic Evidence engine is available. Add the OpenAI API key to enable the tool-using planner.")
         return
-    if st.button(button_label, type="primary", use_container_width=True, key="run_evidence_orchestrator"):
+    if st.button(button_label, type="primary", width="stretch", key="run_evidence_orchestrator"):
         runtime = EvidenceToolRuntime(dataframe=df, role_overrides=role_overrides)
         with st.spinner("CampaignLab is reading the signal, checking the method, and building the analysis..."):
             try:
@@ -871,16 +892,38 @@ def _render_analyze_data(client):
     if orchestration and not same_analysis:
         st.info("The dataset or question changed after the last CampaignLab analysis. Run the plan again before using the old conclusion.")
     if orchestration and same_analysis:
-        intelligence_label("CampaignLab's plan")
-        st.markdown('<div class="cl-call"><h2>Here\'s the move.</h2><p>CampaignLab has inspected the evidence and built the next analytical step.</p></div>', unsafe_allow_html=True)
-        st.markdown(orchestration.text)
+        executed_results = [trace.analytical_result for trace in orchestration.traces if trace.analytical_result]
+        arbitration = arbitrate_evidence(executed_results) if len(executed_results) > 1 else None
+        dominant_method = arbitration.get("dominant_method") if arbitration else None
+        executed = next(
+            (item for item in executed_results if item.get("method_id") == dominant_method),
+            executed_results[-1] if executed_results else None,
+        )
+        method_name = (best_ready or best_any or {}).get("name", "the recommended deterministic method")
+        decision = decision_from_evidence(
+            question=question.strip() or "What can this evidence defensibly support?",
+            analytical_result=executed,
+            next_action=(
+                arbitration["next_evidence"]
+                if arbitration and arbitration["status"] in {"conflict", "not_comparable"}
+                else "Review the executed result and take the smallest reversible action it supports."
+                if executed else f"Complete {method_name} before treating this plan as a conclusion."
+            ),
+            arbitration=arbitration,
+        )
+        render_decision_record(decision, key="evidence_dataset_decision")
+        render_decision_memory()
+        with st.expander("Read the full analysis"):
+            intelligence_label("Analysis explanation")
+            st.caption("The decision brief above is the conclusion. This section shows how CampaignLab interpreted the evidence and where the remaining uncertainty comes from.")
+            st.markdown(orchestration.text)
         st.markdown('<div class="cl-report-card"><b>Take the decision with you.</b><br><span style="color:#aeb7bc">Export a clean, executive-ready record of the question, evidence, recommended method, warnings and CampaignLab analysis.</span></div>', unsafe_allow_html=True)
-        pdf_bytes = build_decision_report(source_name=source_name, question=question, profile=profile, intel=intel, best_method=best_ready or best_any, orchestration_text=orchestration.text)
-        st.download_button("↓ Export Decision Report · PDF", data=pdf_bytes, file_name=f"CampaignLab_Decision_Report_{Path(source_name).stem}.pdf", mime="application/pdf", use_container_width=True)
+        pdf_bytes = build_decision_report(source_name=source_name, question=question, profile=profile, intel=intel, best_method=best_ready or best_any, orchestration_text=orchestration.text, decision=decision)
+        st.download_button("↓ Export Decision Report · PDF", data=pdf_bytes, file_name=f"CampaignLab_Decision_Report_{Path(source_name).stem}.pdf", mime="application/pdf", width="stretch")
 
         with st.expander("Ask CampaignLab about this result"):
             followup = st.text_input("What do you want to understand?", placeholder="e.g. What would make this conclusion weaker?", key=f"result_qa_input_{source_name}")
-            if st.button("Ask about this result", key=f"result_qa_button_{source_name}", use_container_width=True, disabled=not bool(followup.strip())):
+            if st.button("Ask about this result", key=f"result_qa_button_{source_name}", width="stretch", disabled=not bool(followup.strip())):
                 with st.spinner("CampaignLab is translating the result..."):
                     try:
                         answer = ask_about_result(client, question=question, analysis_text=orchestration.text, method_name=(best_ready or best_any or {}).get("name", ""), user_question=followup.strip())
@@ -937,10 +980,10 @@ def render_analytics_directory():
     st.caption("Start with the question. CampaignLab handles the translation from business problem → analytical family → method → statistical machinery.")
 
     st.markdown("""<div class="cl-status-legend">
-      <div class="ready"><b>✓ READY TO RUN</b><span>CampaignLab can execute this now when your evidence meets the method's requirements.</span></div>
-      <div class="special"><b>✦ GUARDED WORKSPACE</b><span>Runnable in a dedicated Lab Special with extra readiness checks and guardrails.</span></div>
-      <div class="coming"><b>◷ COMING NEXT</b><span>Defined in the roadmap, but CampaignLab will not pretend it can run it yet.</span></div>
-      <div class="research"><b>◇ BEING EXPLORED</b><span>Promising, but still under validation before CampaignLab calls it supported.</span></div>
+      <div class="ready"><b>✓ Ready to run</b><span>CampaignLab can execute this now when your evidence meets the method's requirements.</span></div>
+      <div class="special"><b>✦ Guarded workspace</b><span>Runnable in a dedicated Lab Special with extra readiness checks and guardrails.</span></div>
+      <div class="coming"><b>◷ Coming next</b><span>Defined in the roadmap, but CampaignLab will not pretend it can run it yet.</span></div>
+      <div class="research"><b>◇ Being explored</b><span>Promising, but still under validation before CampaignLab calls it supported.</span></div>
     </div>""", unsafe_allow_html=True)
 
     live_count=sum(m["status"]=="Live" for m in METHODS); beta_count=sum(m["status"]=="Beta" for m in METHODS)
@@ -970,7 +1013,8 @@ def render_analytics_directory():
         if q and q not in blob: continue
         machinery=''.join(f'<span class="cl-machine-pill">{x}</span>' for x in presentation.get('machinery',[]))
         status_label={"Live":"Ready to run","Beta":"Guarded workspace","Planned":"Coming next","Research":"Being explored"}.get(method["status"],method["status"])
-        st.markdown(f'<div class="cl-method-shell"><div class="human">{presentation["human_name"]}</div><div class="technical">{presentation["technical"]} · {status_label}</div><div class="cl-machinery">{machinery}</div></div>',unsafe_allow_html=True)
+        status_class = method["status"].lower()
+        st.markdown(f'<div class="cl-method-shell {status_class}"><div class="cl-method-head"><div><div class="human">{presentation["human_name"]}</div><div class="technical">{presentation["technical"]}</div></div><span class="cl-directory-badge">{status_label}</span></div><div class="cl-machinery">{machinery}</div></div>',unsafe_allow_html=True)
         with st.expander(f"{status_icon.get(method['status'],'⚪')} See what {presentation['human_name']} does"):
             st.markdown("**Question it answers**"); st.write(method['answers'])
             c1,c2=st.columns(2)
@@ -989,13 +1033,13 @@ def render_analytics_directory():
             st.warning(method['caution'])
             if method['status']=='Live':
                 st.success("Ready to run when your evidence satisfies the method requirements.")
-                if st.button("Use this with my data →", key=f"use_method_{mid}", use_container_width=True):
+                if st.button("Use this with my data →", key=f"use_method_{mid}", width="stretch"):
                     st.session_state.directory_method_interest = mid
                     st.session_state.evidence_route = "📂 I have data"
                     _go_to("evidence")
             elif method['status']=='Beta':
                 st.info("Runnable in its dedicated guarded workspace while validation expands.")
-                if mid == "mmm_beta" and st.button("Open the guarded MMM workspace →", key=f"open_method_{mid}", use_container_width=True):
+                if mid == "mmm_beta" and st.button("Open the guarded MMM workspace →", key=f"open_method_{mid}", width="stretch"):
                     _go_to("mmm")
             else: st.info("Visible so you can see where CampaignLab is going. It will not claim execution until the implementation is validated and promoted.")
 
@@ -1009,4 +1053,3 @@ def render_analytics_directory():
 
     st.markdown("## What is next")
     st.write("Forecasting is the next major analytical family to promote once its own readiness gate, naïve/seasonal baselines, ARIMA/ETS benchmarking, rolling backtests, prediction intervals and failure behavior are validated. Individualized uplift stays Research until treatment-effect diagnostics are equally defensible.")
-

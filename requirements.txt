@@ -1,4 +1,4 @@
-streamlit>=1.40
+streamlit>=1.63
 openai>=1.68.0
 pandas>=2.2
 numpy>=2.0

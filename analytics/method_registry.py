@@ -52,9 +52,9 @@ METHODS = [
         "use_cases":["Offer × creative","Message × channel"],"assumptions":["Randomized factor assignment"],"diagnostics":["Cell sizes","interaction estimability"],"outputs":["Main and interaction effects"],"visuals":["Interaction plots"],"caution":"Not yet a validated live CampaignLab executor."
     },
     {
-        "id":"cuped","family":"Experimentation","name":"CUPED / pre-period covariate adjustment","status":"Planned",
+        "id":"cuped","family":"Experimentation","name":"CUPED / pre-period covariate adjustment","status":"Live",
         "answers":"Can pre-treatment information reduce experiment variance?","requires":"Randomized assignment, outcome, predictive pre-treatment covariate.",
-        "use_cases":["Revenue experiments with historical spend"],"assumptions":["Covariate is pre-treatment"],"diagnostics":["Variance reduction","covariate balance"],"outputs":["Adjusted treatment effect"],"visuals":["Adjusted vs raw precision"],"caution":"Not yet Live; planned after expanded experiment-validation tests."
+        "use_cases":["Revenue experiments with historical spend"],"assumptions":["Randomized assignment","Covariate is measured before treatment and cannot be affected by it"],"diagnostics":["Raw versus adjusted interval","Variance reduction","Standardized covariate balance"],"outputs":["Raw and adjusted treatment effect","95% interval","business-threshold decision"],"visuals":["Adjusted vs raw precision"],"caution":"CUPED improves precision; it does not repair confounding, broken randomization, or a post-treatment covariate."
     },
     {
         "id":"linear_regression","family":"Predictive & statistical","name":"Linear regression","status":"Live",
@@ -190,15 +190,15 @@ METHODS = [
         "use_cases":["Treatment targeting"],"assumptions":["Causal identification + sufficient sample"],"diagnostics":["Overlap","honest validation"],"outputs":["Conditional treatment effects"],"visuals":["HTE distribution"],"caution":"Research status; subgroup discovery can overfit badly."
     },
     {
-        "id":"mmm_beta","family":"Marketing analytics","name":"Marketing Mix & Budget Optimizer","status":"Beta",
+        "id":"mmm_beta","family":"Marketing analytics","name":"Marketing Mix & Budget Optimizer · Native V2","status":"Beta",
         "answers":"What is driving aggregate performance, where is media saturating, and how could a fixed budget be reallocated within observed support?",
         "requires":"Regular time series with outcome, 2+ media-spend columns, meaningful spend variation, and preferably controls for promotions/pricing/other demand drivers.",
         "use_cases":["Channel contribution","Response curves","Marginal budget allocation","Marketing planning"],
         "assumptions":["Observed controls capture important alternative demand drivers","Response shape is reasonably represented by carryover + saturation","Historical variation contains enough information to distinguish channels"],
-        "diagnostics":["MMM readiness gate","Channel correlation","Spend variation","Chronological holdout","Historical-support budget bounds"],
-        "outputs":["Model-attributed contribution","Carryover / saturation parameters","Holdout error","Constrained budget scenario","Evidence-strength label"],
+        "diagnostics":["MMM readiness gate","Channel correlation","Spend variation","Rolling regularization validation","Expanding-window backtests","Final chronological holdout","Baseline-with-controls benchmark","Leave-one-control-out sensitivity","Conditional residual block bootstrap","Optional scoped experiment calibration","Historical-support budget bounds"],
+        "outputs":["Model-attributed contribution + conditional intervals","Carryover / exponential-or-Hill saturation parameters","Repeated holdout stability","Control sensitivity","Experiment calibration provenance when supplied","Constrained budget scenario","Evidence-strength label"],
         "visuals":["Actual vs modeled history","Channel contribution","Current vs scenario allocation"],
-        "caution":"Beta Lab Special. Observational MMM is not proof of causality; calibrate high-stakes decisions with experiments or credible quasi-experimental evidence where possible."
+        "caution":"Native V2 remains a deterministic observational Beta. Conditional bootstrap intervals are not Bayesian posterior or causal uncertainty. Optional experimental calibration is scoped to the supplied channel and contrast; it does not make the whole model causal."
     },
 
 ]

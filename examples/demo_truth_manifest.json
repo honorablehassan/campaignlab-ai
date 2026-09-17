@@ -1,0 +1,33 @@
+{
+  "version": "2.0",
+  "purpose": "Deterministic known-answer scenarios for demos and regression tests; not real customer data.",
+  "datasets": {
+    "demo_marketing_evidence.csv": {
+      "design": "balanced randomized binary experiment",
+      "known_signal": "treatment adds 2.5 percentage points to conversion probability before sampling noise",
+      "seed": 1103
+    },
+    "demo_panel_rollout.csv": {
+      "design": "30-market panel with parallel pre-trends and stagger-free intervention",
+      "known_signal": "treated markets gain 2.0 plus 1.1 per post-period relative-time unit",
+      "reference_period": -1,
+      "seed": 2207
+    },
+    "demo_mmm_weekly.csv": {
+      "design": "182 weekly periods with four media channels, carryover, saturation, seasonality, trend, controls, and noise",
+      "known_adstock": {
+        "meta_spend": 0.5,
+        "paid_search_spend": 0.25,
+        "youtube_spend": 0.7,
+        "tv_spend": 0.85
+      },
+      "known_relative_media_scale": [
+        "paid_search_spend",
+        "meta_spend",
+        "youtube_spend",
+        "tv_spend"
+      ],
+      "seed": 3301
+    }
+  }
+}

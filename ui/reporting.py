@@ -20,7 +20,7 @@ def _safe(text) -> str:
     return str(text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def build_decision_report(*, source_name: str, question: str, profile, intel, best_method: dict | None, orchestration_text: str | None = None) -> bytes:
+def build_decision_report(*, source_name: str, question: str, profile, intel, best_method: dict | None, orchestration_text: str | None = None, decision: dict | None = None) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=letter, rightMargin=.58*inch, leftMargin=.58*inch, topMargin=.58*inch, bottomMargin=.58*inch, title="CampaignLab Decision Report")
     styles = getSampleStyleSheet()
@@ -36,8 +36,23 @@ def build_decision_report(*, source_name: str, question: str, profile, intel, be
     story.append(Spacer(1, 10))
     story.append(Table([["SOURCE", _safe(source_name)], ["GENERATED", datetime.now().strftime("%b %d, %Y %I:%M %p")]], colWidths=[1.0*inch, 5.7*inch], style=[("BACKGROUND",(0,0),(-1,-1),PANEL),("TEXTCOLOR",(0,0),(0,-1),MUTED),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTNAME",(1,0),(1,-1),"Helvetica"),("FONTSIZE",(0,0),(-1,-1),8.5),("BOTTOMPADDING",(0,0),(-1,-1),6),("TOPPADDING",(0,0),(-1,-1),6)]))
     story.append(Spacer(1, 14))
-    story.append(Paragraph("The decision", h))
-    story.append(Paragraph(_safe(question or "No explicit business question was supplied. CampaignLab scanned for the strongest defensible analytical opportunities in the dataset."), call))
+    story.append(Paragraph("The question", h))
+    story.append(Paragraph(_safe(question or "What can this evidence defensibly support?"), call))
+    if decision:
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("The call", h))
+        story.append(Paragraph(_safe(decision.get("call")), call))
+        confidence = decision.get("confidence") or {}
+        story.append(Paragraph(
+            f"Confidence: <b>{_safe(confidence.get('label'))}</b> | Posture: {_safe(str(decision.get('disposition', '')).replace('_', ' ').title())}",
+            muted,
+        ))
+        story.append(Paragraph("Next action", h))
+        story.append(Paragraph(_safe(decision.get("next_action")), body))
+        if decision.get("flip_conditions"):
+            story.append(Paragraph("What would change the decision", h))
+            for item in decision["flip_conditions"][:5]:
+                story.append(Paragraph(f"• {_safe(item)}", body))
     story.append(Spacer(1, 8))
     story.append(Paragraph("Evidence snapshot", h))
     data=[

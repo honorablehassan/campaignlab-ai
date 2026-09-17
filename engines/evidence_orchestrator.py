@@ -46,6 +46,7 @@ class ToolTrace:
     arguments: dict[str, Any]
     status: str
     output_summary: str
+    analytical_result: dict[str, Any] | None = None
 
 
 @dataclass
@@ -142,7 +143,14 @@ def run_evidence_orchestrator(
                 tool_output = {"error": str(exc), "tool": name}
                 status = "error"
 
-            traces.append(ToolTrace(name=name, arguments=arguments, status=status, output_summary=_summarize_output(tool_output)))
+            envelope = tool_output.get("_analytical_result") if isinstance(tool_output, dict) else None
+            traces.append(ToolTrace(
+                name=name,
+                arguments=arguments,
+                status=status,
+                output_summary=_summarize_output(tool_output),
+                analytical_result=envelope,
+            ))
             outputs.append({
                 "type": "function_call_output",
                 "call_id": getattr(call, "call_id"),
