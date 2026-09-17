@@ -1,5 +1,11 @@
 # Changelog
 
+## Mobile portfolio finish
+
+- Replaced the clipped mobile navigation rail with a compact two-column navigation grid.
+- Added responsive heading, brand, card, spacing, and overflow rules for narrow screens.
+- Reduced Streamlit Community Cloud chrome with minimal toolbar mode.
+
 ## Portfolio release 1.0.0
 
 - Unified Strategy, Evidence and MMM through a versioned Decision Object.
